@@ -1,0 +1,27 @@
+rules_version = '2';
+
+// Design: docs/superpowers/specs/2026-09-17-firestore-multitenant-rules-design.md
+//
+// PREPARED, NOT ENFORCED. Storage is not provisioned in the nextfood-76bc3
+// project (Spark plan, no bucket) and this file is not deployed and not
+// covered by the emulator test suite. It mirrors the Firestore
+// tenant/store path convention so paths are decided ahead of time, but it
+// does NOT yet validate tenant/store membership the way firestore.rules
+// does: doing that correctly needs either a verified cross-service
+// Firestore lookup from Storage rules, or a backend-synced custom-claims
+// cache (which would need a way to run backend code on membership
+// changes) — neither was implemented here to avoid shipping an unverified
+// security mechanism and to avoid introducing a Blaze-only dependency.
+// Resolve this — and add real tests — before Storage is ever provisioned.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /tenants/{tenantId}/stores/{storeId}/{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

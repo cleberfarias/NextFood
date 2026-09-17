@@ -7,6 +7,14 @@ dist/
 next-env.d.ts
 *.tsbuildinfo
 
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+storage-debug.log
+*-debug.log
+
 # Env
 .env
 .env.local
@@ -17,3 +25,6 @@ next-env.d.ts
 
 # graphify
 graphify-out/
+
+# local pre-push hook override (machine-specific, never commit)
+.ecc-hooks-skip-build
