@@ -1,0 +1,203 @@
+rules_version = '2';
+
+// Design: docs/superpowers/specs/2026-09-17-firestore-multitenant-rules-design.md
+//
+// Hierarchy: Platform -> Tenant -> Store. tenantId/storeId are always taken
+// from the request path (never trusted from a document field) and checked
+// against membership documents at that exact path. Deny by default: any
+// path not explicitly matched below is inaccessible.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isTenantMember(tenantId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid));
+    }
+
+    function tenantRole(tenantId) {
+      return get(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid)).data.role;
+    }
+
+    function isTenantOwner(tenantId) {
+      return isTenantMember(tenantId) && tenantRole(tenantId) == 'owner';
+    }
+
+    function isTenantOwnerOrAdmin(tenantId) {
+      return isTenantMember(tenantId) && tenantRole(tenantId) in ['owner', 'admin'];
+    }
+
+    function isStoreMember(tenantId, storeId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/tenants/$(tenantId)/stores/$(storeId)/members/$(request.auth.uid));
+    }
+
+    function storeRole(tenantId, storeId) {
+      return get(/databases/$(database)/documents/tenants/$(tenantId)/stores/$(storeId)/members/$(request.auth.uid)).data.role;
+    }
+
+    function isStoreAdmin(tenantId, storeId) {
+      return isStoreMember(tenantId, storeId) && storeRole(tenantId, storeId) == 'admin';
+    }
+
+    // Tenant owner/admin implicitly has access to every store in the tenant.
+    function hasStoreAccess(tenantId, storeId) {
+      return isTenantOwnerOrAdmin(tenantId) || isStoreMember(tenantId, storeId);
+    }
+
+    // Who may manage a store's settings/members and touch privileged
+    // (financial/payment) fields on that store's business data.
+    function canManageStore(tenantId, storeId) {
+      return isTenantOwnerOrAdmin(tenantId) || isStoreAdmin(tenantId, storeId);
+    }
+
+    // True if none of `keys` changed between the existing and incoming doc.
+    function unchangedFields(keys) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(keys);
+    }
+
+    // ---------------------------------------------------------------------
+    // Platform — public reference data, no client writes
+    // ---------------------------------------------------------------------
+
+    match /platform/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ---------------------------------------------------------------------
+    // Tenants
+    // ---------------------------------------------------------------------
+
+    match /tenants/{tenantId} {
+      allow get: if isTenantMember(tenantId);
+      allow list: if isTenantMember(tenantId);
+
+      // Bootstrap: a tenant may only be created in the same atomic write
+      // (batch/transaction) as the creator's own owner membership doc.
+      // getAfter() proves the sibling write exists in the same atomic
+      // operation; a lone write can never satisfy this.
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly(['ownerId', 'name', 'createdAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && getAfter(/databases/$(database)/documents/tenants/$(tenantId)/members/$(request.auth.uid)).data.role == 'owner';
+
+      allow update: if isTenantOwnerOrAdmin(tenantId)
+        && unchangedFields(['ownerId', 'createdAt']);
+
+      allow delete: if isTenantOwner(tenantId);
+    }
+
+    match /tenants/{tenantId}/members/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isTenantOwnerOrAdmin(tenantId));
+      allow list: if isTenantOwnerOrAdmin(tenantId);
+
+      // Bootstrap: the creator's own 'owner' doc, only alongside the
+      // tenant doc's creation in the same atomic operation (see above).
+      allow create: if isSignedIn()
+        && uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['role', 'createdAt'])
+        && request.resource.data.role == 'owner'
+        && request.resource.data.createdAt == request.time
+        && getAfter(/databases/$(database)/documents/tenants/$(tenantId)).data.ownerId == request.auth.uid;
+
+      // Normal membership management after bootstrap: owner only.
+      allow create: if isTenantOwner(tenantId)
+        && request.resource.data.keys().hasOnly(['role', 'createdAt'])
+        && request.resource.data.role in ['owner', 'admin']
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if isTenantOwner(tenantId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+        && request.resource.data.role in ['owner', 'admin'];
+
+      allow delete: if isTenantOwner(tenantId);
+    }
+
+    // ---------------------------------------------------------------------
+    // Stores
+    // ---------------------------------------------------------------------
+
+    match /tenants/{tenantId}/stores/{storeId} {
+      allow get: if hasStoreAccess(tenantId, storeId);
+      allow list: if isTenantOwnerOrAdmin(tenantId);
+
+      allow create: if isTenantOwnerOrAdmin(tenantId)
+        && request.resource.data.keys().hasOnly(['name', 'createdBy', 'createdAt'])
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if canManageStore(tenantId, storeId)
+        && unchangedFields(['createdBy', 'createdAt']);
+
+      allow delete: if isTenantOwnerOrAdmin(tenantId);
+    }
+
+    match /tenants/{tenantId}/stores/{storeId}/members/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || canManageStore(tenantId, storeId));
+      allow list: if canManageStore(tenantId, storeId);
+
+      allow create: if canManageStore(tenantId, storeId)
+        && request.resource.data.keys().hasOnly(['role', 'createdAt'])
+        && request.resource.data.role in ['admin', 'staff']
+        && request.resource.data.createdAt == request.time;
+
+      allow update: if canManageStore(tenantId, storeId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+        && request.resource.data.role in ['admin', 'staff'];
+
+      allow delete: if canManageStore(tenantId, storeId);
+    }
+
+    // ---------------------------------------------------------------------
+    // Business data — representative pattern (reuse for products, stock
+    // movements, cashier sessions, payments, ...): identity/audit fields
+    // are permanently immutable; financial/payment fields are gated to
+    // owner/admin; staff gets a narrow operational whitelist only.
+    // ---------------------------------------------------------------------
+
+    match /tenants/{tenantId}/stores/{storeId}/orders/{orderId} {
+      allow get: if hasStoreAccess(tenantId, storeId);
+      allow list: if hasStoreAccess(tenantId, storeId);
+
+      allow create: if hasStoreAccess(tenantId, storeId)
+        && request.resource.data.tenantId == tenantId
+        && request.resource.data.storeId == storeId
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.totalAmount is number
+        && request.resource.data.totalAmount >= 0;
+
+      // Staff: narrow, whitelisted operational fields only. Cannot touch
+      // financial/payment/identity/audit fields.
+      allow update: if isStoreMember(tenantId, storeId)
+        && !canManageStore(tenantId, storeId)
+        && unchangedFields(['tenantId', 'storeId', 'createdBy', 'createdAt', 'totalAmount', 'paymentStatus'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'notes', 'updatedBy', 'updatedAt'])
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+
+      // Owner / tenant admin / store admin: operational + financial
+      // fields. Identity/audit fields remain immutable for everyone.
+      allow update: if canManageStore(tenantId, storeId)
+        && unchangedFields(['tenantId', 'storeId', 'createdBy', 'createdAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+             ['status', 'notes', 'totalAmount', 'paymentStatus', 'updatedBy', 'updatedAt'])
+        && request.resource.data.updatedBy == request.auth.uid
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if canManageStore(tenantId, storeId);
+    }
+  }
+}

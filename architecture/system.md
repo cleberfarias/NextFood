@@ -7,10 +7,10 @@ O NextFood é um SaaS vertical para operações de alimentação. A primeira ver
 ## Arquitetura de aplicação
 
 - Next.js + React + TypeScript no frontend e camada web.
-- PostgreSQL como banco relacional.
-- Prisma como ORM.
+- Firestore (Firebase) como banco principal de dados de negócio.
+- Firebase Authentication para autenticação de usuários.
 - Zod para validação de entrada e contratos.
-- Multi-tenancy baseado em `tenantId` e, quando aplicável, `storeId`.
+- Multi-tenancy modelado por hierarquia de path no Firestore (`/tenants/{tenantId}/stores/{storeId}/...`), nunca por campo confiado do cliente. Ver [docs/superpowers/specs/2026-09-17-firestore-multitenant-rules-design.md](../docs/superpowers/specs/2026-09-17-firestore-multitenant-rules-design.md).
 - Serviços de domínio isolados da camada de interface.
 
 ## Camada AI-native
