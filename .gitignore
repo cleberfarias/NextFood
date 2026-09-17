@@ -25,3 +25,6 @@ storage-debug.log
 
 # graphify
 graphify-out/
+
+# local pre-push hook override (machine-specific, never commit)
+.ecc-hooks-skip-build
