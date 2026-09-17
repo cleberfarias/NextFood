@@ -23,6 +23,12 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Setup Java (required by the Firestore Emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile=false
 
@@ -31,6 +37,9 @@ jobs:
 
       - name: Unit tests
         run: pnpm test:unit
+
+      - name: Firestore security rules tests
+        run: pnpm --filter firebase-rules test
 
       - name: Build
         run: pnpm build
