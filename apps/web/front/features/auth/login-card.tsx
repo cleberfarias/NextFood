@@ -10,9 +10,11 @@ import { LoginForm } from "./login-form";
  * positioned over the canvas. Reads the shared sequence to know when to
  * animate in; the "near the chef's hand" starting offset is a calibratable
  * approximation (like THROW_RELEASE_TIME) until the real model is visible
- * in a running app.
+ * in a running app. Distance/rotation are deliberately large and the spring
+ * deliberately underdamped (a small overshoot before settling) so the motion
+ * reads as something being thrown across the screen, not just a fade-in.
  */
-const HIDDEN = { opacity: 0, scale: 0.25, rotateY: -25, rotateZ: 10, x: -96, y: 48 };
+const HIDDEN = { opacity: 0, scale: 0.2, rotateY: -40, rotateZ: 18, x: -320, y: 60 };
 const VISIBLE = { opacity: 1, scale: 1, rotateY: 0, rotateZ: 0, x: 0, y: 0 };
 
 export function LoginCard() {
@@ -23,7 +25,7 @@ export function LoginCard() {
     <motion.div
       initial={skipChoreography ? VISIBLE : HIDDEN}
       animate={visible ? VISIBLE : HIDDEN}
-      transition={skipChoreography ? { duration: 0 } : { type: "spring", stiffness: 260, damping: 24 }}
+      transition={skipChoreography ? { duration: 0 } : { type: "spring", stiffness: 220, damping: 16, mass: 1 }}
       style={{ transformPerspective: 800 }}
     >
       <Card className="w-full max-w-sm bg-white text-zinc-900">

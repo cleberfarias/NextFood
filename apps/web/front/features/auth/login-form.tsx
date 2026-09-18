@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, useTransition, type FormEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { signInWithEmailAndPassword } from "firebase/auth";
@@ -13,6 +13,9 @@ import { Label } from "@/front/ui/label";
 import { computeDodge } from "./compute-dodge";
 
 const EMPTY_FIELDS_MESSAGE = "Preencha seu e-mail e senha para continuar.";
+// How long the "Entrar" button stays dodged before easing back to its normal
+// spot -- it flees, but it doesn't abandon the form.
+const DODGE_RETURN_DELAY_MS = 900;
 
 export function LoginForm() {
   const router = useRouter();
@@ -25,7 +28,14 @@ export function LoginForm() {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [dodgeCount, setDodgeCount] = useState(0);
   const [buttonOffset, setButtonOffset] = useState({ x: 0, y: 0 });
+  const returnTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
+
+  useEffect(() => {
+    return () => {
+      if (returnTimeoutRef.current) clearTimeout(returnTimeoutRef.current);
+    };
+  }, []);
 
   const fieldsEmpty = email.trim() === "" || password.trim() === "";
 
@@ -54,6 +64,13 @@ export function LoginForm() {
         y: prev.y + (nextPosition.y - buttonRect.y),
       }));
       setDodgeCount((count) => count + 1);
+
+      // Flees, but comes back -- it doesn't strand the button somewhere the
+      // user can never reach.
+      if (returnTimeoutRef.current) clearTimeout(returnTimeoutRef.current);
+      returnTimeoutRef.current = setTimeout(() => {
+        setButtonOffset({ x: 0, y: 0 });
+      }, DODGE_RETURN_DELAY_MS);
     }
   }
 
