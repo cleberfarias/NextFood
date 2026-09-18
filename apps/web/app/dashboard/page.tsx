@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser, signOutAction } from "@/back/actions/auth";
+import { signOutAction } from "@/back/actions/auth";
+import { getCurrentUser } from "@/back/actions/get-current-user";
 import { Button } from "@/front/ui/button";
 
 // Reads the session cookie, which depends on the Firebase Admin SDK being

@@ -1,11 +1,11 @@
-import { cache } from "react";
-import { cookies } from "next/headers";
+"use server";
+
 import { redirect } from "next/navigation";
-import { endSession, establishSession, getAuthenticatedUser, type AuthenticatedUser } from "@/back/domain/auth/session";
+import { cookies } from "next/headers";
+import { endSession, establishSession } from "@/back/domain/auth/session";
 import { FirebaseSessionRepository } from "@/back/data/auth/firebase-session-repository";
 import { establishSessionInputSchema } from "@/back/schemas/auth";
-
-const SESSION_COOKIE_NAME = "nextfood_session";
+import { SESSION_COOKIE_NAME } from "@/back/actions/get-current-user";
 
 export type EstablishSessionResult =
   | { status: "success" }
@@ -25,8 +25,6 @@ export type EstablishSessionResult =
  * job (router.push), same as any other action result.
  */
 export async function establishSessionAction(idToken: string): Promise<EstablishSessionResult> {
-  "use server";
-
   const parsed = establishSessionInputSchema.safeParse({ idToken });
   if (!parsed.success) {
     return { status: "error", message: "Não foi possível concluir o login." };
@@ -56,21 +54,9 @@ export async function establishSessionAction(idToken: string): Promise<Establish
  * the cookie.
  */
 export async function signOutAction(): Promise<void> {
-  "use server";
-
   const cookieStore = await cookies();
   const cookie = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   await endSession(new FirebaseSessionRepository(), cookie);
   cookieStore.delete(SESSION_COOKIE_NAME);
   redirect("/login");
 }
-
-/**
- * Server-only query for Server Components (app/login, app/dashboard) --
- * not a Server Action, just memoized per-request via React's cache().
- */
-export const getCurrentUser = cache(async (): Promise<AuthenticatedUser | null> => {
-  const cookieStore = await cookies();
-  const cookie = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  return getAuthenticatedUser(new FirebaseSessionRepository(), cookie);
-});
