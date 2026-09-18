@@ -26,5 +26,8 @@ storage-debug.log
 # graphify
 graphify-out/
 
+# Playwright MCP session artifacts (screenshots/snapshots from live testing)
+.playwright-mcp/
+
 # local pre-push hook override (machine-specific, never commit)
 .ecc-hooks-skip-build

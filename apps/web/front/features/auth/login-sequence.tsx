@@ -6,11 +6,11 @@ import { createContext, useContext, useMemo, useState, type ReactNode } from "re
  * Single source of truth for the login page's intro choreography. Both
  * ChefCharacter (drives/reads it inside the R3F tree) and LoginCard (reads
  * it in plain React) consume the same stage instead of coordinating through
- * independent timers -- see chef-animations.ts's THROW_RELEASE_TIME for how
- * the throwing -> card-visible transition is actually triggered (tied to the
+ * independent timers -- see chef-animations.ts's CARD_REVEAL_TIME for how
+ * the entering -> card-visible transition is actually triggered (tied to the
  * animation clock via useFrame, not a setTimeout guess).
  */
-export type SequenceStage = "booting" | "throwing" | "card-visible" | "idle";
+export type SequenceStage = "booting" | "entering" | "card-visible" | "idle";
 
 type LoginSequenceContextValue = {
   stage: SequenceStage;
@@ -21,9 +21,9 @@ type LoginSequenceContextValue = {
 const LoginSequenceContext = createContext<LoginSequenceContextValue | null>(null);
 
 /**
- * `skipChoreography` covers every reason the 3D throw never plays: reduced
- * motion, no WebGL, or the GLB failing to load. In all of those cases the
- * card must appear in its resting state immediately.
+ * `skipChoreography` covers every reason the chef's walk-in never plays:
+ * reduced motion, no WebGL, or the GLB failing to load. In all of those
+ * cases the card must appear in its resting state immediately.
  */
 export function LoginSequenceProvider({
   children,
