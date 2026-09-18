@@ -26,3 +26,14 @@ export type AnimationKey = keyof typeof ANIMATIONS;
 export const THROW_RELEASE_TIME = 3.2;
 
 export const CHEF_MODEL_PATH = "/models/chef.glb";
+
+/**
+ * Mixamo-rig bone name for the hand that grips/throws the card. The raw GLB
+ * node is named "mixamorig:RightHand" (colon included, confirmed by parsing
+ * the GLB's own JSON chunk), but GLTFLoader strips ':' when it builds the
+ * three.js scene graph -- verified by traversing the actually-loaded scene
+ * in a running app, which names it "mixamorigRightHand". Always check the
+ * loaded scene, not just the raw GLB JSON, when this next changes. Swap to
+ * the Left variant if the throw turns out to use the other arm.
+ */
+export const THROW_HAND_BONE = "mixamorigRightHand";
