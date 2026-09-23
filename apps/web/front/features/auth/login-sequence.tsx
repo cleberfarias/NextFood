@@ -21,8 +21,14 @@ import { useMotionValue, type MotionValue } from "motion/react";
  * MotionValues (not React state) specifically so a 60fps update doesn't
  * trigger a React re-render on every frame; LoginCard binds to them via
  * `style`, which Motion updates directly in the DOM.
+ *
+ * "thrown" sits between "entering" and "card-visible": the card has left
+ * the hand and is tumbling on its own (LoginCard drives that motion, not
+ * hand tracking) while ChefCharacter keeps watching the hand bone's real
+ * height every frame, waiting for it to come back down before advancing to
+ * "card-visible".
  */
-export type SequenceStage = "booting" | "entering" | "card-visible" | "idle";
+export type SequenceStage = "booting" | "entering" | "thrown" | "card-visible" | "idle";
 
 type LoginSequenceContextValue = {
   stage: SequenceStage;

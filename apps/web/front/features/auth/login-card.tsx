@@ -23,11 +23,23 @@ import { LoginForm } from "./login-form";
  * time). One mechanism for the whole transform avoids that.
  */
 const GRIPPED = { opacity: 1, scale: 0.22, rotateY: -18, rotateZ: 10 };
+const AIRBORNE = { opacity: 1, scale: 1, rotateY: 0 };
 const RELEASED = { opacity: 1, scale: 1, rotateY: 0, rotateZ: 0 };
 const SPRING = { type: "spring" as const, stiffness: 220, damping: 16, mass: 1 };
 
+// "thrown" has no fixed duration -- it ends whenever ChefCharacter detects
+// the hand is back down, not on a timer -- so the toss and the spin loop
+// indefinitely instead of animating to a fixed end state. Whatever values
+// they're at the instant "thrown" ends become the spring's start point,
+// which is what makes the settle look like it's catching real motion
+// instead of snapping.
+const TOSS_RISE_PX = 120;
+const TOSS_BOB = { duration: 0.9, ease: "easeInOut" as const, repeat: Infinity, repeatType: "mirror" as const };
+const SPIN = { duration: 0.6, ease: "linear" as const, repeat: Infinity };
+
 export function LoginCard() {
   const { stage, skipChoreography, handX, handY } = useLoginSequence();
+  const thrown = !skipChoreography && stage === "thrown";
   const released = skipChoreography || stage === "card-visible" || stage === "idle";
 
   const initial = skipChoreography ? RELEASED : GRIPPED;
@@ -37,18 +49,40 @@ export function LoginCard() {
   const rotateZ = useMotionValue(initial.rotateZ);
 
   useEffect(() => {
-    const target = released ? RELEASED : GRIPPED;
-
     if (skipChoreography) {
-      opacity.set(target.opacity);
-      scale.set(target.scale);
-      rotateY.set(target.rotateY);
-      rotateZ.set(target.rotateZ);
+      opacity.set(RELEASED.opacity);
+      scale.set(RELEASED.scale);
+      rotateY.set(RELEASED.rotateY);
+      rotateZ.set(RELEASED.rotateZ);
       handX.set(0);
       handY.set(0);
       return;
     }
 
+    if (thrown) {
+      animate(opacity, AIRBORNE.opacity, SPRING);
+      animate(scale, AIRBORNE.scale, SPRING);
+      animate(rotateY, AIRBORNE.rotateY, SPRING);
+      animate(rotateZ, rotateZ.get() + 360, SPIN);
+      animate(handX, 0, SPRING);
+      animate(handY, handY.get() - TOSS_RISE_PX, TOSS_BOB);
+
+      return () => {
+        opacity.stop();
+        scale.stop();
+        rotateY.stop();
+        rotateZ.stop();
+        // Collapse the accumulated spin (e.g. 750deg) back into a single
+        // turn before the "released" branch below springs it to 0 --
+        // otherwise the spring unwinds every full rotation it racked up,
+        // spinning the card backwards several times to get there.
+        rotateZ.set(((rotateZ.get() % 360) + 360) % 360);
+        handX.stop();
+        handY.stop();
+      };
+    }
+
+    const target = released ? RELEASED : GRIPPED;
     animate(opacity, target.opacity, SPRING);
     animate(scale, target.scale, SPRING);
     animate(rotateY, target.rotateY, SPRING);
@@ -71,7 +105,7 @@ export function LoginCard() {
       handX.stop();
       handY.stop();
     };
-  }, [released, skipChoreography, opacity, scale, rotateY, rotateZ, handX, handY]);
+  }, [thrown, released, skipChoreography, opacity, scale, rotateY, rotateZ, handX, handY]);
 
   return (
     <motion.div style={{ x: handX, y: handY, opacity, scale, rotateY, rotateZ, transformPerspective: 800 }}>
