@@ -60,7 +60,7 @@
 }
 
 html {
-  background: #09090b;
+  background: var(--brand-surface);
 }
 
 body {
@@ -170,8 +170,3 @@ body {
 }
 
 /* PDV brand interaction: every enabled action uses the açaí purple hover. */
-.pos-theme button:hover:not(:disabled) {
-  border-color: #71145b !important;
-  background-color: #71145b !important;
-  color: #ffffff !important;
-}

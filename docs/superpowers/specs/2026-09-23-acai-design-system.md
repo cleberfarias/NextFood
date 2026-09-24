@@ -33,4 +33,12 @@ Exemplo:
 </Button>
 ```
 
+## Decisões permanentes para o PDV
+
+- O PDV prioriza a sequência operacional: produtos e pesagem, revisão, pagamento e finalização. A etapa atual aparece acima do conteúdo e a próxima ação aparece junto ao total.
+- Painéis operacionais usam borda `brand-border`, raio amplo e elevação discreta. O painel de total usa `brand-surface-muted`; somente a ação principal usa `brand-primary`.
+- Estados de dispositivo e integrações devem ser nomeados como `Simulada`, `Demonstração` ou `Integração pendente` até que exista confirmação de backend. Não usar mensagens de sucesso para fluxos locais.
+- Ações destrutivas e dependentes de autorização usam diálogo com foco gerenciado. A senha do supervisor nunca é coletada ou validada no cliente.
+- Componentes de operação reutilizáveis ficam em `front/features/pos/pos-ui.tsx`: cartão de produto, linha de carrinho, seletor de pagamento, indicador de balança e feedback.
+
 Novos módulos (Estoque, Financeiro e Configurações) devem reutilizar esses tokens; não crie novas cores locais sem necessidade de produto.

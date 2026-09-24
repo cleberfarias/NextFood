@@ -6,6 +6,7 @@ export function usePrefersReducedMotion(): boolean {
   const [prefersReduced, setPrefersReduced] = useState(false);
 
   useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
     setPrefersReduced(query.matches);
 

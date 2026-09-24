@@ -1,331 +1,76 @@
 "use client";
 
-import { CircleCheck, Printer, Scale, ShoppingBasket } from "lucide-react";
+import { CreditCard, Keyboard, ShoppingBasket } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/front/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/front/ui/card";
-import { calculateLineTotal, calculateRemainingAmount, isPaymentComplete } from "./pos-calculations";
+import { usePrefersReducedMotion } from "@/front/lib/use-prefers-reduced-motion";
+import { calculateDiscountedTotal, calculateLineTotal, calculateRemainingAmount } from "./pos-calculations";
 import { AÇAI_COMPLEMENTS, AÇAI_PRICE_PER_KG, MOCK_SCALE, type CartItem, type PaymentMethod, UNIT_PRODUCTS } from "./pos-mocks";
+import { CartLine, OperationFeedback, PaymentMethodSelector, PosDialog, ProductCard, QuantityControl, ScaleIndicator } from "./pos-ui";
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-
+const AÇAÍ_COMPLEMENTS = AÇAI_COMPLEMENTS;
 const paymentMethods: readonly PaymentMethod[] = ["Dinheiro", "Débito", "Crédito", "Pix"];
+type Permission = "cancel" | "discount" | "closeCash";
+type FeedbackTone = "info" | "error" | "success";
+const USERS = [{ id: "general", name: "Usuário geral", permissions: [] as Permission[] }, { id: "cashier", name: "Caixa Ana", permissions: [] as Permission[] }, { id: "manager", name: "Gerente", permissions: ["cancel", "discount", "closeCash"] as Permission[] }] as const;
+
+function makeItem(item: Omit<CartItem, "baseTotal" | "discountPercent">): CartItem { return { ...item, baseTotal: item.total, discountPercent: 0 }; }
 
 export function PdvExperience() {
+  const reducedMotion = usePrefersReducedMotion();
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [weightKg, setWeightKg] = useState<number | null>(null);
-  const [manualWeight, setManualWeight] = useState("");
-  const [manualMode, setManualMode] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("Dinheiro");
-  const [paymentAmount, setPaymentAmount] = useState("");
-  const [payments, setPayments] = useState<Array<{ method: PaymentMethod; amount: number }>>([]);
-  const [complementQuantities, setComplementQuantities] = useState<Record<string, number>>({});
-  const [receiptReady, setReceiptReady] = useState(false);
-  const [shortcutFeedback, setShortcutFeedback] = useState<string | null>(null);
+  const [weight, setWeight] = useState<number | null>(null);
+  const [scaleStatus, setScaleStatus] = useState<"connected" | "disconnected">("connected");
+  const [complements, setComplements] = useState<Record<string, number>>({});
+  const [method, setMethod] = useState<PaymentMethod>("Dinheiro");
+  const [amount, setAmount] = useState("");
+  const [payments, setPayments] = useState<Array<{ id: string; method: PaymentMethod; amount: number }>>([]);
+  const [saleDiscount, setSaleDiscount] = useState(0);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{ message: string; tone: FeedbackTone } | null>(null);
+  const [activeUser, setActiveUser] = useState<(typeof USERS)[number]["id"]>("manager");
   const [terminalOpen, setTerminalOpen] = useState(false);
-  const [terminalMethod, setTerminalMethod] = useState<"Débito" | "Crédito à vista" | "Crédito parcelado">("Débito");
-  const [terminalStatus, setTerminalStatus] = useState<"idle" | "waiting" | "approved" | "declined">("idle");
-  const [fiscalOpen, setFiscalOpen] = useState(false);
-  const [cancelOpen, setCancelOpen] = useState(false);
-  const [cancelPassword, setCancelPassword] = useState("");
-  const [discountPercent, setDiscountPercent] = useState(0);
+  const [terminalState, setTerminalState] = useState<"idle" | "waiting" | "declined">("idle");
+  const [pixOpen, setPixOpen] = useState(false);
+  const [authorizationOpen, setAuthorizationOpen] = useState(false);
+  const [cashCloseOpen, setCashCloseOpen] = useState(false);
+  const [online, setOnline] = useState(true);
 
+  const user = USERS.find((entry) => entry.id === activeUser) ?? USERS[0];
+  const can = (permission: Permission) => user.permissions.includes(permission);
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.total, 0), [cart]);
-  const total = subtotal * (1 - discountPercent / 100);
-  const paymentValues = payments.map((payment) => payment.amount);
-  const paidTotal = paymentValues.reduce((sum, value) => sum + value, 0);
-  const remaining = calculateRemainingAmount(total, paymentValues);
-  const change = paymentMethod === "Dinheiro" && paidTotal > total ? paidTotal - total : 0;
-  const canFinish = cart.length > 0 && isPaymentComplete(total, paymentValues);
+  const total = calculateDiscountedTotal(subtotal, saleDiscount);
+  const paid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+  const remaining = calculateRemainingAmount(total, payments.map((payment) => payment.amount));
+  const cashPaid = payments.filter((payment) => payment.method === "Dinheiro").reduce((sum, payment) => sum + payment.amount, 0);
+  const change = paid > total && cashPaid > 0 ? Math.min(paid - total, cashPaid) : 0;
+  // Fiscal issuance is intentionally blocked until a real fiscal provider is connected.
+  const canFinish = false;
+  const nextAction = cart.length === 0 ? "Selecione produtos" : remaining > 0 ? "Registre o pagamento" : "Revise a finalização";
 
-  function addWeighedItem() {
-    if (weightKg === null) return;
+  function clearPayments() { setPayments([]); setPaymentError(null); }
+  function addProduct(product: (typeof UNIT_PRODUCTS)[number]) { setCart((items) => [...items, makeItem({ id: crypto.randomUUID(), sourceId: product.id, name: product.name, quantityLabel: "1 unidade", total: product.price })]); clearPayments(); }
+  function addWeight() { if (weight === null || scaleStatus === "disconnected") return; const lineTotal = calculateLineTotal(weight, AÇAI_PRICE_PER_KG); setCart((items) => [...items, makeItem({ id: crypto.randomUUID(), sourceId: "acai", name: "Açaí por peso", quantityLabel: `${weight.toFixed(3).replace(".", ",")} kg × ${money.format(AÇAI_PRICE_PER_KG)}/kg`, total: lineTotal })]); setWeight(null); clearPayments(); }
+  function changeComplement(complement: (typeof AÇAI_COMPLEMENTS)[number], delta: number) { const current = complements[complement.id] ?? 0; if (delta < 0 && current === 0) return; setComplements((values) => ({ ...values, [complement.id]: current + delta })); if (delta > 0) setCart((items) => [...items, makeItem({ id: crypto.randomUUID(), sourceId: complement.id, name: complement.name, quantityLabel: "1 adicional", total: complement.price })]); else setCart((items) => { const index = items.map((item) => item.sourceId).lastIndexOf(complement.id); return index < 0 ? items : items.filter((_, itemIndex) => itemIndex !== index); }); clearPayments(); }
+  function removeItem(id: string) { const item = cart.find((entry) => entry.id === id); setCart((items) => items.filter((entry) => entry.id !== id)); if (item?.sourceId && complements[item.sourceId]) setComplements((values) => ({ ...values, [item.sourceId!]: Math.max(0, values[item.sourceId!] - 1) })); clearPayments(); }
+  function updateItemDiscount(id: string, raw: string) { const discount = Math.min(100, Math.max(0, Number(raw) || 0)); setCart((items) => items.map((item) => item.id === id ? { ...item, discountPercent: discount, total: calculateDiscountedTotal(item.baseTotal ?? item.total, discount) } : item)); clearPayments(); }
+  function addPayment() { const value = Number(amount.replace(",", ".")); if (!Number.isFinite(value) || value <= 0) { setPaymentError("Informe um valor maior que zero."); return; } if (cart.length === 0) { setPaymentError("Adicione itens antes de registrar um pagamento."); return; } setPayments((items) => [...items, { id: crypto.randomUUID(), method, amount: value }]); setAmount(""); setPaymentError(null); }
+  function requestAuthorization() { if (!can("cancel")) { setFeedback({ message: "Seu usuário não tem permissão para solicitar cancelamentos.", tone: "error" }); return; } setAuthorizationOpen(true); }
 
-    const lineTotal = calculateLineTotal(weightKg, AÇAI_PRICE_PER_KG);
-    setCart((items) => [
-      ...items,
-      {
-        id: `acai-${items.length + 1}`,
-        name: "Açaí por peso",
-        quantityLabel: `${weightKg.toFixed(3).replace(".", ",")} kg × ${money.format(AÇAI_PRICE_PER_KG)}/kg`,
-        total: lineTotal,
-      },
-    ]);
-    setWeightKg(null);
-    setDiscountPercent(0);
-    setPayments([]);
-    setReceiptReady(false);
-  }
-
-  function applyManualWeight() {
-    const value = Number(manualWeight.replace(",", "."));
-    if (!Number.isFinite(value) || value <= 0 || value > 100) return;
-    setWeightKg(value);
-    setManualMode(true);
-  }
-
-  function addUnitProduct(product: (typeof UNIT_PRODUCTS)[number]) {
-    setCart((items) => [
-      ...items,
-      { id: `${product.id}-${items.length + 1}`, name: product.name, quantityLabel: "1 unidade", total: product.price },
-    ]);
-    setPayments([]);
-    setReceiptReady(false);
-  }
-
-  function updateComplement(complement: (typeof AÇAI_COMPLEMENTS)[number], delta: number) {
-    const current = complementQuantities[complement.id] ?? 0;
-    const next = Math.max(0, current + delta);
-    setComplementQuantities((quantities) => ({ ...quantities, [complement.id]: next }));
-    if (delta > 0) {
-      setCart((items) => [...items, { id: `${complement.id}-${Date.now()}`, name: complement.name, quantityLabel: "1 adicional", total: complement.price }]);
-      setPayments([]);
-      setReceiptReady(false);
-    }
-  }
-
-  function addPayment() {
-    const amount = Number(paymentAmount.replace(",", "."));
-    if (!Number.isFinite(amount) || amount <= 0) return;
-    setPayments((entries) => [...entries, { method: paymentMethod, amount }]);
-    setPaymentAmount("");
-    setReceiptReady(false);
-  }
-
-  function cancelLastItem() {
-    setCancelOpen(true);
-  }
-
-  function authorizeCancel() {
-    if (cancelPassword !== "1234") return;
-    setCart((items) => items.slice(0, -1));
-    setPayments([]);
-    setReceiptReady(false);
-    setShortcutFeedback("Item cancelado da venda atual.");
-    setCancelPassword("");
-    setCancelOpen(false);
-  }
-
-  function clearSale() {
-    setCart([]);
-    setPayments([]);
-    setWeightKg(null);
-    setReceiptReady(false);
-    setShortcutFeedback("Venda atual limpa.");
-  }
-
-  function openPaymentTerminal() {
-    setTerminalStatus("idle");
-    setTerminalOpen(true);
-  }
-
-  function reprintLastReceipt() {
-    setShortcutFeedback(receiptReady ? "Reimpressão enviada para a impressora térmica." : "Nenhum recibo concluído para reimprimir.");
-  }
-
-  function openCashDrawer() {
-    setShortcutFeedback("Comando de abertura da gaveta enviado (mock).");
-  }
-
-  function closeCashRegister() {
-    setShortcutFeedback("Fechamento de caixa iniciado (mock).");
-  }
+  useEffect(() => { const shortcuts = (event: KeyboardEvent) => { const target = event.target as HTMLElement | null; if (target?.closest("input, textarea, select, [role=dialog], [contenteditable=true]") || event.altKey || event.ctrlKey || event.metaKey) return; const actions: Partial<Record<string, () => void>> = { F2: () => setTerminalOpen(true), F4: requestAuthorization, F6: () => { setCart([]); clearPayments(); }, F8: () => setFeedback({ message: "Reimpressão indisponível sem integração com a térmica.", tone: "info" }), F10: () => setCashCloseOpen(true) }; const action = actions[event.key]; if (action) { event.preventDefault(); action(); } }; const connection = () => setOnline(navigator.onLine); connection(); window.addEventListener("keydown", shortcuts); window.addEventListener("online", connection); window.addEventListener("offline", connection); return () => { window.removeEventListener("keydown", shortcuts); window.removeEventListener("online", connection); window.removeEventListener("offline", connection); }; });
 
   useEffect(() => {
-    function handleKeyboardShortcut(event: KeyboardEvent) {
-      if (event.target instanceof HTMLInputElement) return;
-      const actions: Record<string, () => void> = {
-        F2: openPaymentTerminal,
-        F4: cancelLastItem,
-        F6: clearSale,
-        F8: reprintLastReceipt,
-        F9: openCashDrawer,
-        F10: closeCashRegister,
-      };
-      const action = actions[event.key];
-      if (!action) return;
-      event.preventDefault();
-      action();
-    }
+    if (method === "Pix") setPixOpen(true);
+  }, [method]);
 
-    window.addEventListener("keydown", handleKeyboardShortcut);
-    return () => window.removeEventListener("keydown", handleKeyboardShortcut);
-  });
-
-  return (
-    <main className="pos-theme min-h-screen bg-brand-surface px-4 py-4 text-brand-plum-900 sm:px-8 lg:h-dvh lg:min-h-0 lg:overflow-hidden">
-      {terminalOpen ? <div className="fixed inset-0 z-50 grid place-items-center bg-[#32102d]/40 p-4" role="presentation" onClick={() => setTerminalOpen(false)}>
-        <section role="dialog" aria-modal="true" aria-labelledby="terminal-title" className="w-full max-w-md rounded-2xl border border-brand-border bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-          <p className="text-xs font-semibold tracking-[0.18em] text-[#8b1c67]">PAGAMENTO</p>
-          <h2 id="terminal-title" className="mt-1 font-serif text-2xl text-[#32102d]">Abrir pagamento na maquininha</h2>
-          <p className="mt-3 text-sm text-[#71465f]">Confira o valor e inicie a cobrança no cartão.</p>
-          <div className="mt-5 rounded-xl bg-[#f3e9e4] p-4"><span className="text-sm text-[#71465f]">Valor da venda</span><strong className="mt-1 block font-serif text-3xl text-[#32102d]">{money.format(total)}</strong></div>
-          <fieldset className="mt-5"><legend className="text-sm font-semibold text-[#32102d]">Forma no cartão</legend><div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">{(["Débito", "Crédito à vista", "Crédito parcelado"] as const).map((method) => <Button key={method} type="button" variant={terminalMethod === method ? "default" : "outline"} className={terminalMethod === method ? "bg-[#71145b] text-white hover:bg-[#5d104b]" : "border-[#eaded8] text-[#71145b] hover:bg-[#71145b] hover:!text-white"} onClick={() => setTerminalMethod(method)}>{method}</Button>)}</div></fieldset>
-          {terminalStatus === "waiting" ? <p role="status" className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-700">Aguardando confirmação na maquininha...</p> : null}
-          {terminalStatus === "approved" ? <p role="status" className="mt-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">Pagamento aprovado no cartão.</p> : null}
-          {terminalStatus === "declined" ? <p role="status" className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">Pagamento recusado. Tente novamente.</p> : null}
-          <div className="mt-5 flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setTerminalOpen(false)}>Cancelar</Button>{terminalStatus === "waiting" ? <><Button variant="outline" onClick={() => setTerminalStatus("declined")}>Simular recusa</Button><Button className="bg-[#71145b] text-white hover:bg-[#5d104b]" onClick={() => setTerminalStatus("approved")}>Simular aprovação</Button></> : <Button className="bg-[#71145b] text-white hover:bg-[#5d104b]" onClick={() => { setTerminalStatus("waiting"); setShortcutFeedback(`Cobrança iniciada: ${terminalMethod}.`); }}>Iniciar cobrança</Button>}</div>
-        </section>
-      </div> : null}
-      <div className="mx-auto flex max-w-7xl flex-col lg:h-full">
-        <header className="mb-4 flex shrink-0 flex-col gap-4 border-b border-brand-border pb-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="grid size-11 place-items-center rounded-xl bg-brand-primary font-serif text-2xl font-bold text-white">A</div>
-            <div>
-              <h1 className="font-serif text-2xl font-bold tracking-tight text-[#2d102b]">Ponto do Açaí</h1>
-              <p className="text-sm text-brand-text-muted">quarta-feira, 23 de setembro</p>
-            </div>
-          </div>
-          <nav aria-label="Áreas do sistema" className="order-3 flex w-full gap-1 rounded-xl bg-brand-surface-muted p-1 text-sm font-semibold text-brand-text-soft sm:order-2 sm:w-auto">
-            <Button className="bg-white text-brand-primary shadow-sm hover:bg-brand-primary hover:!text-white" variant="ghost">Caixa</Button>
-            <Button className="text-brand-text-soft hover:bg-brand-primary hover:!text-white" variant="ghost">Estoque</Button>
-            <Button className="text-brand-text-soft hover:bg-brand-primary hover:!text-white" variant="ghost">Financeiro</Button>
-            <Button className="text-brand-text-soft hover:bg-brand-primary hover:!text-white" variant="ghost">Configurações</Button>
-          </nav>
-          <div className="order-2 flex items-center gap-2 self-end rounded-full border border-brand-border bg-white px-4 py-2 text-sm text-brand-text-soft shadow-sm sm:order-3 sm:self-auto">
-            Saldo de hoje <strong className="font-mono text-emerald-600">R$ 0,00</strong>
-          </div>
-        </header>
-
-        <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(0,1fr)_25rem]">
-          <section className="grid min-h-0 content-start gap-5">
-            <Card className="min-h-0 border border-brand-border bg-brand-surface-card shadow-[0_8px_24px_rgba(73,28,59,0.08)]">
-              <CardHeader>
-                <p className="text-xs font-semibold tracking-[0.18em] text-[#8b1c67]">PESAGEM</p>
-                <CardTitle className="flex items-center gap-2 font-serif text-xl text-[#32102d]"><Scale className="size-5 text-[#8b1c67]" /> Açaí por peso</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
-                <div className="rounded-xl border border-[#eaded8] bg-[#f3e9e4] p-5">
-                  <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="text-[#71465f]">{MOCK_SCALE.name}</span>
-                    <span className="inline-flex items-center gap-1.5 text-emerald-600"><CircleCheck className="size-4" /> {manualMode ? "Modo manual" : "Conectada"}</span>
-                  </div>
-                  {manualMode ? <label className="mt-5 block text-xs font-medium text-[#71465f]" htmlFor="manual-weight">Peso manual (kg)<input id="manual-weight" inputMode="decimal" value={manualWeight} onChange={(event) => { setManualWeight(event.target.value); const value = Number(event.target.value.replace(",", ".")); if (Number.isFinite(value) && value > 0 && value <= 100) setWeightKg(value); }} placeholder="0,000" className="mt-1 block w-full border-0 bg-transparent p-0 text-4xl font-semibold tabular-nums text-[#32102d] outline-none focus:ring-0" /></label> : <p className="mt-5 text-4xl font-semibold tabular-nums text-[#32102d]">{weightKg === null ? "—" : `${weightKg.toFixed(3).replace(".", ",")} kg`}</p>}
-                  <p className="mt-2 text-sm text-[#8e6e80]">Preço atual: {money.format(AÇAI_PRICE_PER_KG)} por kg</p>
-                </div>
-                <div className="flex w-full flex-col gap-2 md:min-w-56 [&>button]:w-full">
-                  {!manualMode ? <Button className="w-full border-[#eaded8] bg-white text-[#71145b] hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={() => { setManualMode(true); setManualWeight(weightKg?.toFixed(3).replace(".", ",") ?? ""); }}>Usar peso manual</Button> : null}
-                  {manualMode ? <Button className="border-[#eaded8] bg-white text-[#71145b] hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={() => { setManualMode(false); setManualWeight(""); }}>Voltar para ler balança</Button> : null}
-                  <Button className="border-[#eaded8] bg-white text-[#71145b] hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={() => setWeightKg(MOCK_SCALE.readingKg)}>Ler balança</Button>
-                  <Button className="w-full bg-[#71145b] text-white hover:bg-[#5d104b]" onClick={addWeighedItem} disabled={weightKg === null}>Adicionar açaí ao carrinho</Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="border border-brand-border bg-brand-surface-card shadow-[0_8px_24px_rgba(73,28,59,0.08)]">
-              <CardHeader>
-                <p className="text-xs font-semibold tracking-[0.18em] text-[#8b1c67]">ITENS E ADICIONAIS</p>
-                <CardTitle className="font-serif text-xl text-[#32102d]">Produtos rápidos</CardTitle>
-              </CardHeader>
-              <CardContent className="max-h-[19rem] space-y-4 overflow-y-auto">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {UNIT_PRODUCTS.map((product) => (
-                  <button
-                    key={product.id}
-                    type="button"
-                    onClick={() => addUnitProduct(product)}
-                    className="group rounded-xl border border-[#eaded8] bg-[#f3e9e4] p-4 text-left text-[#32102d] transition hover:border-[#71145b] hover:bg-[#71145b] hover:!text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8b1c67]"
-                  >
-                    <span className="block font-medium text-[#32102d] group-hover:text-white">{product.name}</span>
-                    <span className="mt-2 block text-sm text-[#8b1c67] group-hover:text-white">{money.format(product.price)}</span>
-                  </button>
-                  ))}
-                </div>
-                <div>
-                  <p className="mb-2 text-xs font-semibold tracking-[0.14em] text-[#8b1c67]">COMPLEMENTOS PARA AÇAÍ</p>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {AÇAI_COMPLEMENTS.map((complement) => {
-                      const quantity = complementQuantities[complement.id] ?? 0;
-                      return (
-                        <div key={complement.id} className="rounded-xl border border-[#eaded8] bg-[#f3e9e4] p-3 text-[#32102d]">
-                          <p className="font-medium">{complement.name}</p>
-                          <p className="mt-1 text-sm text-[#8b1c67]">{money.format(complement.price)}</p>
-                          <div className="mt-2 flex items-center justify-between">
-                            <Button aria-label={`Diminuir ${complement.name}`} className="size-7 border-[#eaded8] bg-white p-0 text-[#71145b] hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={() => updateComplement(complement, -1)} disabled={quantity === 0}>−</Button>
-                            <span className="font-semibold">{quantity}</span>
-                            <Button aria-label={`Adicionar ${complement.name}`} className="size-7 border-[#eaded8] bg-white p-0 text-[#71145b] hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={() => updateComplement(complement, 1)}>+</Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </section>
-
-          <aside>
-            <Card className="border border-brand-border bg-brand-surface-card shadow-[0_8px_24px_rgba(73,28,59,0.08)] lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto">
-              <CardHeader>
-                <p className="text-xs font-semibold tracking-[0.18em] text-[#8b1c67]">VENDA ATUAL</p>
-                <CardTitle className="flex items-center gap-2 font-serif text-xl text-[#32102d]"><ShoppingBasket className="size-5" /> Carrinho</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <div className="h-60 shrink-0 space-y-3 overflow-y-auto pr-1 [scrollbar-color:rgb(113_20_91_/_0.45)_transparent]">
-                  {cart.length === 0 ? <p className="py-6 text-center text-sm text-[#b08c9f]">Nenhum item ainda — pese o açaí ou adicione um produto.</p> : cart.map((item) => (
-                    <div key={item.id} className="flex justify-between gap-4 border-b border-[#eaded8] pb-3">
-                      <div><p className="font-medium text-[#32102d]">{item.name}</p><p className="mt-1 text-xs text-[#9a7890]">{item.quantityLabel}</p></div>
-                      <span className="font-medium tabular-nums">{money.format(item.total)}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="border-t border-[#eaded8] pt-4">
-                  <p className="mb-2 text-xs font-semibold tracking-[0.14em] text-[#8e6e80]">PAGAMENTO</p>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {paymentMethods.map((method) => <Button key={method} className={paymentMethod === method ? "bg-[#f3e9e4] text-[#71145b] hover:bg-[#71145b] hover:!text-white" : "border-[#eaded8] bg-[#f3e9e4] text-[#71465f] hover:bg-[#71145b] hover:!text-white"} variant={paymentMethod === method ? "default" : "outline"} onClick={() => setPaymentMethod(method)}>{method}</Button>)}
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <label className="sr-only" htmlFor="payment-amount">Valor do pagamento</label>
-                    <input
-                      id="payment-amount"
-                      inputMode="decimal"
-                      value={paymentAmount}
-                      onChange={(event) => setPaymentAmount(event.target.value)}
-                      placeholder="Valor"
-                      className="h-9 min-w-0 flex-1 rounded-lg border border-[#eaded8] bg-[#f8f5f2] px-3 text-sm text-[#32102d] outline-none ring-[#b36b9e] focus:ring-2"
-                    />
-                    <Button className="border-[#eaded8] bg-white text-[#71145b] hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={addPayment} disabled={!paymentAmount}>Adicionar</Button>
-                  </div>
-                  {paymentMethod === "Pix" && total > 0 ? <div className="mt-3 rounded-xl border border-[#eaded8] bg-[#f3e9e4] p-4"><p className="text-sm font-semibold text-[#32102d]">Pix — QR Code da cobrança</p><div className="mx-auto mt-3 grid size-32 grid-cols-8 gap-1 rounded-lg bg-white p-2">{Array.from({ length: 64 }, (_, index) => <span key={index} className={((index * 17 + 3) % 5 < 2 || index % 9 === 0) ? "bg-[#32102d]" : "bg-white"} />)}</div><p className="mt-2 text-center text-xs text-[#71465f]">Valor: {money.format(Math.max(remaining, total))}</p><Button className="mt-3 w-full bg-[#71145b] text-white hover:bg-[#5d104b]" onClick={() => { setPaymentAmount(Math.max(remaining, total).toFixed(2).replace(".", ",")); }}>Confirmar Pix recebido</Button></div> : null}
-                  {payments.length > 0 ? <div className="mt-3 space-y-1 text-xs text-[#71465f]">{payments.map((payment, index) => <p key={`${payment.method}-${index}`} className="flex justify-between"><span>{payment.method}</span><span>{money.format(payment.amount)}</span></p>)}</div> : <p className="mt-3 text-xs text-[#9a7890]">Adicione um ou mais pagamentos para concluir a venda.</p>}
-                </div>
-
-                <div className="flex items-end justify-between border-t border-[#eaded8] pt-4">
-                  <span className="text-[#71465f]">Total</span>
-                  <strong className="font-serif text-3xl tabular-nums text-[#32102d]">{money.format(total)}</strong>
-                </div>
-                {cart.length > 0 ? <label className="flex items-center justify-between gap-3 text-sm text-[#71465f]" htmlFor="discount-percent">Desconto (%)<input id="discount-percent" type="number" min="0" max="100" value={discountPercent} onChange={(event) => setDiscountPercent(Math.min(100, Math.max(0, Number(event.target.value) || 0)))} className="h-9 w-24 rounded-lg border border-[#eaded8] bg-[#f8f5f2] px-3 text-right text-[#32102d]" /></label> : null}
-                {remaining > 0 ? <p className="text-sm text-amber-700">Falta pagar {money.format(remaining)}.</p> : null}
-                {change > 0 ? <p className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">Troco: {money.format(change)}</p> : null}
-                {cart.length > 0 && !canFinish ? <p className="text-xs text-[#9a7890]">Adicione o pagamento total para habilitar a finalização da venda.</p> : null}
-                <Button className="h-11 bg-[#f2c992] text-base text-[#9b8b9c] hover:bg-[#edbd7e] enabled:bg-[#71145b] enabled:text-white" disabled={!canFinish} onClick={() => setFiscalOpen(true)}>Finalizar venda</Button>
-                {receiptReady ? <div role="status" className="flex items-center gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700"><Printer className="size-4" /> Recibo pronto para impressão térmica</div> : null}
-                {shortcutFeedback ? <p role="status" className="text-sm text-[#8b1c67]">{shortcutFeedback}</p> : null}
-              </CardContent>
-            </Card>
-          </aside>
-        </div>
-
-        <section aria-label="Atalhos do caixa" className="mt-4 shrink-0 rounded-xl border border-brand-border bg-brand-surface-card p-3 shadow-[0_8px_24px_rgba(73,28,59,0.06)]">
-          <div className="mb-3 flex items-center justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold tracking-[0.18em] text-[#8b1c67]">ATALHOS DO CAIXA</p>
-              <p className="mt-1 text-xs text-[#9a7890]">Também funcionam pelas teclas de função quando o foco não está em um campo.</p>
-            </div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-            <Button className="h-auto min-h-9 whitespace-normal px-3 py-2 text-xs leading-tight hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={openPaymentTerminal}>F2 · Abrir pagamento na maquininha</Button>
-            <Button className="h-auto min-h-9 whitespace-normal px-3 py-2 text-xs leading-tight hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={cancelLastItem} disabled={cart.length === 0}>F4 · Cancelar último item</Button>
-            <Button className="h-auto min-h-9 whitespace-normal px-3 py-2 text-xs leading-tight hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={clearSale} disabled={cart.length === 0}>F6 · Limpar venda</Button>
-            <Button className="h-auto min-h-9 whitespace-normal px-3 py-2 text-xs leading-tight hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={reprintLastReceipt}>F8 · Reimprimir recibo</Button>
-            <Button className="h-auto min-h-9 whitespace-normal px-3 py-2 text-xs leading-tight hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={openCashDrawer}>F9 · Abrir gaveta</Button>
-            <Button className="h-auto min-h-9 whitespace-normal px-3 py-2 text-xs leading-tight hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={closeCashRegister}>F10 · Fechar caixa</Button>
-          </div>
-        </section>
-      </div>
-      {fiscalOpen ? <div className="fixed inset-0 z-50 grid place-items-center bg-[#32102d]/40 p-4" role="presentation" onClick={() => setFiscalOpen(false)}><section role="dialog" aria-modal="true" aria-labelledby="fiscal-title" className="w-full max-w-md rounded-2xl border border-brand-border bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}><p className="text-xs font-semibold tracking-[0.18em] text-[#8b1c67]">EMISSÃO DA VENDA</p><h2 id="fiscal-title" className="mt-1 font-serif text-2xl text-[#32102d]">Como deseja emitir?</h2><p className="mt-2 text-sm text-[#71465f]">Escolha o documento para imprimir na impressora térmica.</p><div className="mt-5 grid gap-3 sm:grid-cols-2"><Button className="h-auto min-h-16 border-[#eaded8] bg-white text-[#71145b] hover:bg-[#71145b] hover:!text-white" variant="outline" onClick={() => { setFiscalOpen(false); setReceiptReady(true); setShortcutFeedback("Recibo de venda enviado para impressão térmica."); }}>Recibo de venda</Button><Button className="h-auto min-h-16 bg-[#71145b] text-white hover:bg-[#5d104b]" onClick={() => { setFiscalOpen(false); setReceiptReady(true); setShortcutFeedback("Cupom fiscal enviado para impressão térmica."); }}>Cupom fiscal</Button></div></section></div> : null}
-      {cancelOpen ? <div className="fixed inset-0 z-50 grid place-items-center bg-[#32102d]/40 p-4" role="presentation" onClick={() => setCancelOpen(false)}><section role="dialog" aria-modal="true" aria-labelledby="cancel-title" className="w-full max-w-sm rounded-2xl border border-brand-border bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}><h2 id="cancel-title" className="font-serif text-2xl text-[#32102d]">Autorizar cancelamento</h2><p className="mt-2 text-sm text-[#71465f]">Informe a senha do responsável para cancelar o último item.</p><input autoFocus type="password" aria-label="Senha de cancelamento" value={cancelPassword} onChange={(event) => setCancelPassword(event.target.value)} className="mt-4 h-10 w-full rounded-lg border border-[#eaded8] px-3 text-[#32102d]" /><div className="mt-4 flex justify-end gap-2"><Button variant="outline" onClick={() => setCancelOpen(false)}>Voltar</Button><Button className="bg-[#71145b] text-white hover:bg-[#5d104b]" onClick={authorizeCancel}>Autorizar</Button></div></section></div> : null}
-    </main>
-  );
+  return <main className="min-h-screen bg-brand-surface px-3 py-3 text-brand-plum-900 sm:px-5 lg:h-dvh lg:overflow-hidden"><motion.div initial={reducedMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reducedMotion ? 0 : 0.24 }} className="mx-auto flex max-w-[96rem] flex-col gap-3 lg:h-full">
+    <header className="flex flex-col gap-3 rounded-2xl border border-brand-border bg-brand-surface-card px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><div className="grid size-10 place-items-center rounded-xl bg-brand-primary font-serif text-xl font-bold text-white">A</div><div><h1 className="font-serif text-xl font-semibold text-brand-plum-950">Ponto do Açaí</h1><p className="text-xs text-brand-text-muted">Caixa 01 · Venda rápida</p></div></div><div className="flex items-center gap-2"><span className={online ? "rounded-full bg-brand-surface-muted px-2.5 py-1 text-xs font-medium text-brand-success" : "rounded-full bg-brand-surface-muted px-2.5 py-1 text-xs font-medium text-brand-rose"}>{online ? "Online" : "Offline · demonstração"}</span><select aria-label="Usuário ativo" value={activeUser} onChange={(event) => setActiveUser(event.target.value as typeof activeUser)} className="h-8 rounded-lg border border-brand-border bg-brand-surface-card px-2 text-xs text-brand-text-soft focus-visible:outline-2 focus-visible:outline-brand-primary">{USERS.map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></div></header>
+    <section aria-label="Etapas da venda" className="grid grid-cols-2 gap-2 rounded-xl border border-brand-border bg-brand-surface-card p-2 text-xs sm:grid-cols-4">{["1 · Produtos", "2 · Carrinho", "3 · Pagamento", "4 · Finalizar"].map((step, index) => <div key={step} className={index === (cart.length === 0 ? 0 : remaining > 0 ? 2 : 3) ? "rounded-lg bg-brand-primary px-3 py-2 font-semibold text-white" : "rounded-lg px-3 py-2 text-brand-text-muted"}>{step}</div>)}</section>
+    <div className="grid min-h-0 gap-3 lg:flex-1 lg:grid-cols-[minmax(0,1.4fr)_minmax(22rem,0.8fr)]"><section className="grid content-start gap-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1"><Card className="gap-0 border border-brand-border bg-brand-surface-card py-0 shadow-sm"><CardHeader className="px-5 pt-5"><p className="text-xs font-semibold tracking-[0.16em] text-brand-rose">ETAPA 1 · PESAGEM</p><CardTitle className="mt-1 font-serif text-xl text-brand-plum-950">Açaí por peso</CardTitle></CardHeader><CardContent className="grid gap-4 px-5 pb-5 md:grid-cols-[1fr_13rem] md:items-end"><ScaleIndicator weightKg={weight} status={scaleStatus} /><div className="grid gap-2"><Button variant="outline" className="border-brand-border bg-brand-surface-card text-brand-text-soft hover:border-brand-primary hover:bg-brand-surface-muted" onClick={() => setScaleStatus((state) => state === "connected" ? "disconnected" : "connected")}>{scaleStatus === "connected" ? "Simular desconexão" : "Reconectar (simulado)"}</Button><Button variant="outline" disabled={scaleStatus === "disconnected"} className="border-brand-border bg-brand-surface-card text-brand-primary hover:bg-brand-surface-muted" onClick={() => setWeight(MOCK_SCALE.readingKg)}>Ler balança (simulado)</Button><Button className="bg-brand-primary text-white hover:bg-brand-primary-dark" disabled={weight === null || scaleStatus === "disconnected"} onClick={addWeight}>Adicionar açaí</Button></div></CardContent></Card><Card className="gap-0 border border-brand-border bg-brand-surface-card py-0 shadow-sm"><CardHeader className="px-5 pt-5"><p className="text-xs font-semibold tracking-[0.16em] text-brand-rose">ETAPA 1 · PRODUTOS</p><CardTitle className="mt-1 font-serif text-xl text-brand-plum-950">Produtos e complementos</CardTitle></CardHeader><CardContent className="space-y-5 px-5 pb-5"><div className="grid gap-3 sm:grid-cols-3">{UNIT_PRODUCTS.map((product) => <ProductCard key={product.id} name={product.name} price={product.price} onAdd={() => addProduct(product)} />)}</div><div><p className="mb-2 text-xs font-semibold tracking-[0.14em] text-brand-text-soft">COMPLEMENTOS</p><div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{AÇAÍ_COMPLEMENTS.map((item) => <QuantityControl key={item.id} name={item.name} quantity={complements[item.id] ?? 0} onChange={(delta) => changeComplement(item, delta)} />)}</div></div></CardContent></Card></section>
+    <aside className="lg:min-h-0 lg:overflow-y-auto"><Card className="gap-0 border border-brand-border bg-brand-surface-card py-0 shadow-md"><CardHeader className="border-b border-brand-border px-5 py-5"><p className="text-xs font-semibold tracking-[0.16em] text-brand-rose">ETAPA 2 · REVISÃO</p><CardTitle className="mt-1 flex items-center gap-2 font-serif text-xl text-brand-plum-950"><ShoppingBasket className="size-5 text-brand-rose" /> Venda atual</CardTitle></CardHeader><CardContent className="space-y-4 px-5 py-4"><ul aria-label="Itens da venda" className="max-h-56 overflow-y-auto">{cart.length === 0 ? <li className="py-8 text-center text-sm text-brand-text-muted">Comece adicionando um produto ou uma pesagem.</li> : cart.map((item) => <CartLine key={item.id} item={item} canDiscount={can("discount")} onDiscount={(value) => updateItemDiscount(item.id, value)} onRemove={() => removeItem(item.id)} />)}</ul>{cart.length > 0 ? <label className="flex items-center justify-between gap-2 border-t border-brand-border pt-3 text-sm text-brand-text-soft">Desconto na venda<input aria-label="Desconto na venda (%)" disabled={!can("discount")} type="number" min="0" max="100" value={saleDiscount} onChange={(event) => { setSaleDiscount(Math.min(100, Math.max(0, Number(event.target.value) || 0))); clearPayments(); }} className="h-8 w-16 rounded-md border border-brand-border bg-brand-surface-card px-2 text-right text-brand-plum-900 disabled:opacity-50" />%</label> : null}<div className="rounded-xl bg-brand-surface-muted p-4"><div className="flex items-end justify-between gap-3"><span className="text-sm font-medium text-brand-text-soft">Total</span><strong className="font-serif text-4xl font-semibold text-brand-plum-950">{money.format(total)}</strong></div>{remaining > 0 ? <p className="mt-2 text-sm font-medium text-brand-rose">Falta pagar {money.format(remaining)}</p> : cart.length > 0 ? <p className="mt-2 text-sm font-medium text-brand-success">Pagamento completo</p> : null}{change > 0 ? <p className="mt-2 text-sm font-medium text-brand-success">Troco em dinheiro: {money.format(change)}</p> : null}</div><div className="border-t border-brand-border pt-4"><div className="mb-3 flex items-center justify-between"><p className="text-xs font-semibold tracking-[0.14em] text-brand-rose">ETAPA 3 · PAGAMENTO</p><Button size="xs" variant="outline" className="border-brand-border text-brand-text-soft" onClick={() => setTerminalOpen(true)}><CreditCard /> Maquininha</Button></div><PaymentMethodSelector value={method} onChange={setMethod} /><div className="mt-3 flex gap-2"><input aria-label="Valor do pagamento" aria-invalid={Boolean(paymentError)} inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setPaymentError(null); }} placeholder="R$ 0,00" className="h-9 min-w-0 flex-1 rounded-lg border border-brand-border bg-brand-surface-card px-3 text-sm text-brand-plum-900 focus-visible:outline-2 focus-visible:outline-brand-primary" /><Button className="bg-brand-primary text-white hover:bg-brand-primary-dark" onClick={addPayment}>Adicionar</Button></div>{paymentError ? <p role="alert" className="mt-2 text-xs text-brand-rose">{paymentError}</p> : null}{payments.length > 0 ? <ul aria-label="Pagamentos registrados" className="mt-3 space-y-2">{payments.map((payment) => <li key={payment.id} className="flex items-center justify-between rounded-lg bg-brand-surface-muted px-3 py-2 text-sm"><span className="text-brand-text-soft">{payment.method}</span><span className="flex items-center gap-2 font-semibold tabular-nums text-brand-plum-900">{money.format(payment.amount)}<Button aria-label={`Remover pagamento ${payment.method}`} size="icon-xs" variant="ghost" className="text-brand-text-muted" onClick={() => setPayments((items) => items.filter((item) => item.id !== payment.id))}>×</Button></span></li>)}</ul> : null}</div><OperationFeedback message={feedback?.message ?? null} tone={feedback?.tone} /><Button disabled={!canFinish} className="h-12 w-full bg-brand-primary text-base text-white hover:bg-brand-primary-dark disabled:bg-brand-accent-peach disabled:text-brand-text-soft" onClick={() => setFeedback({ message: "Finalização fiscal indisponível: conecte emissor fiscal e impressora para concluir vendas reais.", tone: "info" })}>Finalizar venda</Button><p className="text-center text-xs text-brand-text-muted">Próxima ação: {nextAction}</p></CardContent></Card></aside></div>
+    <section aria-label="Ações rápidas" className="flex flex-wrap items-center gap-2 rounded-xl border border-brand-border bg-brand-surface-card p-3 shadow-sm"><span className="mr-1 inline-flex items-center gap-1 text-xs font-semibold text-brand-text-soft"><Keyboard className="size-4" /> Ações rápidas</span><Button size="sm" variant="outline" onClick={() => setTerminalOpen(true)}>F2 · Maquininha</Button><Button size="sm" variant="outline" disabled={cart.length === 0} onClick={requestAuthorization}>F4 · Cancelar item</Button><Button size="sm" variant="outline" disabled={cart.length === 0} onClick={() => { setCart([]); clearPayments(); }}>F6 · Limpar venda</Button><Button size="sm" variant="outline" onClick={() => setFeedback({ message: "Reimpressão indisponível sem integração com a térmica.", tone: "info" })}>F8 · Reimprimir</Button><Button size="sm" variant="outline" disabled={!can("closeCash")} onClick={() => setCashCloseOpen(true)}>F10 · Fechar caixa</Button></section>
+  </motion.div><PosDialog open={terminalOpen} onOpenChange={setTerminalOpen} title="Maquininha" description="Integração ainda não conectada. Use este painel somente para validar a interface."><div className="rounded-lg bg-brand-surface-muted p-4"><p className="text-xs text-brand-text-muted">Valor a cobrar</p><strong className="font-serif text-3xl text-brand-plum-950">{money.format(remaining || total)}</strong></div>{terminalState === "waiting" ? <p role="status" className="mt-4 text-sm text-brand-text-soft">Aguardando resposta do dispositivo simulado…</p> : null}{terminalState === "declined" ? <p role="alert" className="mt-4 text-sm text-brand-rose">Pagamento recusado (simulação).</p> : null}<div className="mt-5 flex justify-end gap-2"><Button variant="outline" onClick={() => setTerminalOpen(false)}>Fechar</Button><Button variant="outline" onClick={() => setTerminalState("declined")}>Simular recusa</Button><Button className="bg-brand-primary text-white hover:bg-brand-primary-dark" onClick={() => setTerminalState("waiting")}>Iniciar simulação</Button></div></PosDialog><PosDialog open={pixOpen} onOpenChange={setPixOpen} title="Cobrança Pix" description="QR Code e confirmação dependem de um provedor Pix integrado."><div aria-label="QR Code indisponível" className="grid min-h-36 place-items-center rounded-xl border border-dashed border-brand-border bg-brand-surface-muted text-center text-sm text-brand-text-muted">QR Code indisponível<br />Integração Pix pendente</div><div className="mt-5 flex justify-end"><Button variant="outline" onClick={() => setPixOpen(false)}>Fechar</Button></div></PosDialog><PosDialog open={authorizationOpen} onOpenChange={setAuthorizationOpen} title="Solicitar autorização" description="O cancelamento exige validação do servidor."><OperationFeedback message="A senha não é coletada no navegador. Conecte a autorização de supervisor no backend para concluir esta ação." tone="info" /><div className="mt-5 flex justify-end"><Button variant="outline" onClick={() => setAuthorizationOpen(false)}>Entendi</Button></div></PosDialog><PosDialog open={cashCloseOpen} onOpenChange={setCashCloseOpen} title="Fechamento do caixa" description="A conferência por forma de pagamento será habilitada ao conectar o módulo financeiro."><div className="grid grid-cols-2 gap-2">{paymentMethods.map((entry) => <div key={entry} className="rounded-lg bg-brand-surface-muted p-3 text-sm text-brand-text-soft"><span>{entry}</span><strong className="mt-1 block text-brand-plum-950">R$ —</strong></div>)}</div><div className="mt-5 flex justify-end"><Button variant="outline" onClick={() => setCashCloseOpen(false)}>Fechar</Button></div></PosDialog></main>;
 }

@@ -5,55 +5,45 @@ import { PdvExperience } from "./pdv-experience";
 afterEach(cleanup);
 
 describe("PdvExperience", () => {
-  it("adds the stable mock scale reading to the cart and prepares a thermal receipt", () => {
+  it("adds a simulated scale reading and keeps fiscal completion unavailable", () => {
     render(<PdvExperience />);
-
     fireEvent.click(screen.getByRole("button", { name: /ler balança/i }));
-    fireEvent.click(screen.getByRole("button", { name: /adicionar açaí ao carrinho/i }));
-    fireEvent.change(screen.getByLabelText("Valor do pagamento"), { target: { value: "17,96" } });
-    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
-    fireEvent.click(screen.getByRole("button", { name: /finalizar venda/i }));
-    fireEvent.click(screen.getByRole("button", { name: /recibo de venda/i }));
-
-    expect(screen.getByText("Recibo pronto para impressão térmica")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /adicionar açaí/i }));
     expect(screen.getAllByText("Açaí por peso")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: /finalizar venda/i })).toBeDisabled();
   });
 
-  it("cancels the last cart item without cancelling the whole sale", () => {
+  it("removes a complement from the cart when its quantity is reduced", () => {
     render(<PdvExperience />);
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar Banana" }));
+    expect(screen.getAllByText("Banana")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Diminuir Banana" }));
+    expect(screen.getAllByText("Banana")).toHaveLength(1);
+  });
 
+  it("reports a field-level error for an invalid payment", () => {
+    render(<PdvExperience />);
     fireEvent.click(screen.getAllByRole("button", { name: /copo 300 ml/i })[0]);
-    expect(screen.getAllByText("Copo 300 ml")).toHaveLength(2);
-
-    fireEvent.click(screen.getByRole("button", { name: /cancelar último item/i }));
-
-    fireEvent.change(screen.getByLabelText(/senha de cancelamento/i), { target: { value: "1234" } });
-    fireEvent.click(screen.getByRole("button", { name: /autorizar/i }));
-    expect(screen.getAllByText("Copo 300 ml")).toHaveLength(1);
-    expect(screen.getByText(/item cancelado/i)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Valor do pagamento"), { target: { value: "0" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/maior que zero/i);
   });
 
-  it("opens the mock card terminal from the conventional payment shortcut", () => {
+  it("allows removing a registered payment", () => {
     render(<PdvExperience />);
-
-    fireEvent.click(screen.getByRole("button", { name: /abrir pagamento na maquininha/i }));
-
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /iniciar cobran/i }));
-    expect(screen.getByText(/cobrança iniciada/i)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /copo 300 ml/i })[0]);
+    fireEvent.change(screen.getByLabelText("Valor do pagamento"), { target: { value: "14,90" } });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar" }));
+    expect(screen.getByRole("button", { name: "Remover pagamento Dinheiro" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remover pagamento Dinheiro" }));
+    expect(screen.queryByRole("button", { name: "Remover pagamento Dinheiro" })).not.toBeInTheDocument();
   });
 
-  it("accepts a manual weight when the scale integration is unavailable", () => {
+  it("uses an accessible server-dependent authorization dialog", () => {
     render(<PdvExperience />);
-
-    fireEvent.click(screen.getByRole("button", { name: /usar peso manual/i }));
-    fireEvent.change(screen.getByLabelText(/peso manual/i), { target: { value: "0,325" } });
-    fireEvent.click(screen.getByRole("button", { name: /adicionar.*carrinho/i }));
-
-    expect(screen.getByText(/modo manual/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/0,325 kg/i).length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByRole("button", { name: /voltar para ler/i }));
-    expect(screen.getByRole("button", { name: /ler balan/i })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /copo 300 ml/i })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /cancelar item/i }));
+    expect(screen.getByRole("dialog")).toHaveTextContent(/validação do servidor/i);
+    expect(screen.queryByLabelText(/senha/i)).not.toBeInTheDocument();
   });
 });
