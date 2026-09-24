@@ -24,6 +24,7 @@ O sistema deve estar apto a operar no caixa mesmo durante indisponibilidade temp
 - Imprimir recibo de venda em impressora térmica ao concluir a venda e imprimir/reimprimir o cupom fiscal quando ele for emitido.
 - Consultar, cancelar e registrar o motivo de uma venda já realizada.
 - Exigir senha de cancelamento compartilhável, com troca diária ou semanal; registrar quem solicitou, quem autorizou e quando.
+- Disponibilizar atalhos de operação rápida no caixa: abrir pagamento na maquininha, cancelar o último item, limpar a venda, reimprimir recibo, abrir gaveta e iniciar fechamento do caixa. Os atalhos devem funcionar por botões visíveis e teclas de função configuráveis.
 
 ### Catálogo e estoque
 

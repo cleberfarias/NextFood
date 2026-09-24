@@ -38,6 +38,21 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+
+  /* Ponto do Açaí semantic brand tokens. */
+  --brand-plum-950: #160d1d;
+  --brand-plum-900: #32102d;
+  --brand-primary: #71145b;
+  --brand-primary-dark: #5d104b;
+  --brand-rose: #8b1c67;
+  --brand-surface: #f8f5f2;
+  --brand-surface-card: #ffffff;
+  --brand-surface-muted: #f3e9e4;
+  --brand-border: #eaded8;
+  --brand-text-muted: #9a7890;
+  --brand-text-soft: #71465f;
+  --brand-accent-peach: #f2c992;
+  --brand-success: #16a34a;
 }
 
 * {
@@ -93,6 +108,19 @@ body {
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --color-brand-plum-950: var(--brand-plum-950);
+  --color-brand-plum-900: var(--brand-plum-900);
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-primary-dark: var(--brand-primary-dark);
+  --color-brand-rose: var(--brand-rose);
+  --color-brand-surface: var(--brand-surface);
+  --color-brand-surface-card: var(--brand-surface-card);
+  --color-brand-surface-muted: var(--brand-surface-muted);
+  --color-brand-border: var(--brand-border);
+  --color-brand-text-muted: var(--brand-text-muted);
+  --color-brand-text-soft: var(--brand-text-soft);
+  --color-brand-accent-peach: var(--brand-accent-peach);
+  --color-brand-success: var(--brand-success);
 }
 
 .dark {
@@ -139,4 +167,11 @@ body {
   html {
     @apply font-sans;
   }
+}
+
+/* PDV brand interaction: every enabled action uses the açaí purple hover. */
+.pos-theme button:hover:not(:disabled) {
+  border-color: #71145b !important;
+  background-color: #71145b !important;
+  color: #ffffff !important;
 }
