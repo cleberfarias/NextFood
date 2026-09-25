@@ -1,5 +1,5 @@
-import { ComingSoon } from "@/front/features/home/coming-soon";
+import { SettingsHub } from "@/front/features/settings/settings-hub";
 
 export default function ConfiguracoesPage() {
-  return <ComingSoon title="Configurações" description="Produtos, preços, usuários e dados da loja." />;
+  return <SettingsHub />;
 }
