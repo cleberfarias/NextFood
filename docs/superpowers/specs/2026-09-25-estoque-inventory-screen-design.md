@@ -52,11 +52,12 @@ Código em TypeScript puro: sem Next.js, React ou Firebase (regra de `back/archi
 
 **Validações** (em ordem; a primeira que falhar é retornada)
 1. `reason` vazia após `trim()` → erro no campo `reason`: "Informe a justificativa."
-2. `quantity` não numérica ou não finita → erro em `quantity`: "Informe uma quantidade válida."
-3. `entrada`/`perda` com `quantity <= 0` → erro em `quantity`: "A quantidade precisa ser maior que zero."
-4. `ajuste` com `quantity === 0` → erro em `quantity`: "O ajuste não pode ser zero."
-5. `inventario` com `quantity < 0` → erro em `quantity`: "A contagem não pode ser negativa."
-6. Saldo resultante `< 0` → erro em `quantity`, com a mensagem citando o saldo atual, por exemplo "A perda de 3 kg é maior que o saldo de 2 kg."
+2. `quantity` não numérica ou não finita → erro em `quantity`: "Informe uma quantidade válida." (um campo vazio conta como não numérico; nunca vira zero)
+3. Item com unidade `un` e `quantity` fracionada → erro em `quantity`: "Use um número inteiro para itens em unidades." (adicionada na revisão do plano)
+4. `entrada`/`perda` com `quantity <= 0` → erro em `quantity`: "A quantidade precisa ser maior que zero."
+5. `ajuste` com `quantity === 0` → erro em `quantity`: "O ajuste não pode ser zero."
+6. `inventario` com `quantity < 0` → erro em `quantity`: "A contagem não pode ser negativa."
+7. Saldo resultante `< 0` → erro em `quantity`, com a mensagem citando o saldo atual, por exemplo "A perda de 3 kg é maior que o saldo de 2 kg."
 
 **Funções**
 - `applyMovement(item, input, meta: { id, author, createdAt })` retorna `{ ok: true, item, movement }` ou `{ ok: false, error: { field: "quantity" | "reason", message } }`. Nunca lança exceção para erro de negócio.
