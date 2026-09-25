@@ -8,17 +8,12 @@ import { Button } from "@/front/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/front/ui/card";
 import { usePrefersReducedMotion } from "@/front/lib/use-prefers-reduced-motion";
 import { calculateDiscountedTotal, calculateLineTotal, calculateRemainingAmount, isPaymentComplete } from "./pos-calculations";
-import { unitProducts, weighedProduct } from "@/back/domain/catalog/catalog";
-import { CATALOG } from "@/front/features/catalog/catalog-mocks";
+import { activeComplements, unitProducts, weighedProduct, type UnitProduct } from "@/back/domain/catalog/catalog";
+import { useCatalog } from "@/front/features/catalog/catalog-store";
 import { MOCK_SCALE, type CartItem, type PaymentMethod } from "./pos-mocks";
 import { CartLine, OperationFeedback, PaymentMethodSelector, PosDialog, ProductCard, QuantityControl, ScaleIndicator } from "./pos-ui";
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const UNIT_PRODUCTS = unitProducts(CATALOG);
-const AÇAI_PRICE_PER_KG = weighedProduct(CATALOG).pricePerKg;
-// Until the till adopts ready cups, a complement is still charged per portion at its extra price.
-const AÇAI_COMPLEMENTS = CATALOG.complements.map((complement) => ({ id: complement.id, name: complement.name, price: complement.extraPrice }));
-const AÇAÍ_COMPLEMENTS = AÇAI_COMPLEMENTS;
 const paymentMethods: readonly PaymentMethod[] = ["Dinheiro", "Débito", "Crédito", "Pix"];
 type Permission = "cancel" | "discount" | "closeCash";
 type FeedbackTone = "info" | "error" | "success";
@@ -32,6 +27,14 @@ const outlineButtonClass = "border-brand-border text-brand-text-soft hover:borde
 function makeItem(item: Omit<CartItem, "baseTotal" | "discountPercent">): CartItem { return { ...item, baseTotal: item.total, discountPercent: 0 }; }
 
 export function PdvExperience() {
+  const catalog = useCatalog();
+  const UNIT_PRODUCTS = useMemo(() => unitProducts(catalog), [catalog]);
+  const AÇAI_PRICE_PER_KG = weighedProduct(catalog).pricePerKg;
+  // Until the till adopts ready cups, a complement is still charged per portion at its extra price.
+  const AÇAÍ_COMPLEMENTS = useMemo(
+    () => activeComplements(catalog).map((complement) => ({ id: complement.id, name: complement.name, price: complement.extraPrice })),
+    [catalog],
+  );
   const reducedMotion = usePrefersReducedMotion();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [weight, setWeight] = useState<number | null>(null);
@@ -68,7 +71,7 @@ export function PdvExperience() {
       counts[item.sourceId] = (counts[item.sourceId] ?? 0) + 1;
     }
     return counts;
-  }, [cart, activeAcaiGroupId, needsGroupSelection]);
+  }, [AÇAÍ_COMPLEMENTS, cart, activeAcaiGroupId, needsGroupSelection]);
   const cartGroups = useMemo(() => {
     const childrenByParent = new Map<string, CartItem[]>();
     const roots: CartItem[] = [];
@@ -98,9 +101,9 @@ export function PdvExperience() {
   const nextAction = cart.length === 0 ? "Selecione produtos" : "Finalização bloqueada: integração fiscal pendente.";
 
   function clearPayments() { setPayments([]); setPaymentError(null); }
-  function addProduct(product: (typeof UNIT_PRODUCTS)[number]) { setCart((items) => [...items, makeItem({ id: crypto.randomUUID(), sourceId: product.id, name: product.name, quantityLabel: "1 unidade", total: product.price })]); clearPayments(); }
+  function addProduct(product: UnitProduct) { setCart((items) => [...items, makeItem({ id: crypto.randomUUID(), sourceId: product.id, name: product.name, quantityLabel: "1 unidade", total: product.price })]); clearPayments(); }
   function addWeight() { if (weight === null || scaleStatus === "disconnected") return; const lineTotal = calculateLineTotal(weight, AÇAI_PRICE_PER_KG); const id = crypto.randomUUID(); setCart((items) => [...items, makeItem({ id, sourceId: "acai", name: "Açaí por peso", quantityLabel: `${weight.toFixed(3).replace(".", ",")} kg × ${money.format(AÇAI_PRICE_PER_KG)}/kg`, total: lineTotal })]); setActiveAcaiGroupId(id); setWeight(null); clearPayments(); }
-  function changeComplement(complement: (typeof AÇAI_COMPLEMENTS)[number], delta: number) { const current = activeComplementCounts[complement.id] ?? 0; if (delta < 0 && current === 0) return; if (delta > 0) setCart((items) => [...items, makeItem({ id: crypto.randomUUID(), sourceId: complement.id, groupId: activeAcaiGroupId ?? undefined, name: complement.name, quantityLabel: "1 adicional", total: complement.price })]); else setCart((items) => { const index = items.map((item) => item.sourceId === complement.id && (item.groupId ?? null) === activeAcaiGroupId).lastIndexOf(true); return index < 0 ? items : items.filter((_, itemIndex) => itemIndex !== index); }); clearPayments(); }
+  function changeComplement(complement: (typeof AÇAÍ_COMPLEMENTS)[number], delta: number) { const current = activeComplementCounts[complement.id] ?? 0; if (delta < 0 && current === 0) return; if (delta > 0) setCart((items) => [...items, makeItem({ id: crypto.randomUUID(), sourceId: complement.id, groupId: activeAcaiGroupId ?? undefined, name: complement.name, quantityLabel: "1 adicional", total: complement.price })]); else setCart((items) => { const index = items.map((item) => item.sourceId === complement.id && (item.groupId ?? null) === activeAcaiGroupId).lastIndexOf(true); return index < 0 ? items : items.filter((_, itemIndex) => itemIndex !== index); }); clearPayments(); }
   function removeItem(id?: string) { void id; requestAuthorization(); }
   function updateItemDiscount(id: string, raw: string) { const discount = Math.min(100, Math.max(0, Number(raw) || 0)); setCart((items) => items.map((item) => item.id === id ? { ...item, discountPercent: discount, total: calculateDiscountedTotal(item.baseTotal ?? item.total, discount) } : item)); clearPayments(); }
   function addPayment() { const value = Number(amount.replace(",", ".")); if (!Number.isFinite(value) || value <= 0) { setPaymentError("Informe um valor maior que zero."); return; } if (cart.length === 0) { setPaymentError("Adicione itens antes de registrar um pagamento."); return; } setPayments((items) => [...items, { id: crypto.randomUUID(), method, amount: value, status: "informed" }]); setAmount(""); setPaymentError(null); setFeedback({ message: "Valor informado; aguardando confirmação da integração de pagamento.", tone: "info" }); }

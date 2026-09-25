@@ -1,10 +1,23 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { CATALOG } from "@/front/features/catalog/catalog-mocks";
+import { saveCatalog } from "@/front/features/catalog/catalog-store";
 import { PdvExperience } from "./pdv-experience";
 
 afterEach(cleanup);
 
 describe("PdvExperience", () => {
+  it("sells with the prices saved in the Cardápio and hides disabled complements", () => {
+    saveCatalog({
+      ...CATALOG,
+      products: CATALOG.products.map((product) => (product.kind === "unidade" && product.id === "copo-300" ? { ...product, price: 16.5 } : product)),
+      complements: CATALOG.complements.map((complement) => (complement.id === "confete" ? { ...complement, active: false } : complement)),
+    });
+    render(<PdvExperience />);
+    expect(screen.getByRole("button", { name: /Copo 300 ml.*R\$\s16,50/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Adicionar Confete" })).not.toBeInTheDocument();
+  });
+
   it("adds a simulated scale reading and keeps fiscal completion unavailable", () => {
     render(<PdvExperience />);
     fireEvent.click(screen.getByRole("button", { name: /ler peso/i }));

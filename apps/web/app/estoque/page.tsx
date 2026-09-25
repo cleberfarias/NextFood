@@ -1,5 +1,5 @@
-import { InventoryExperience } from "@/front/features/inventory/inventory-experience";
+import { InventoryScreen } from "@/front/features/inventory/inventory-screen";
 
 export default function EstoquePage() {
-  return <InventoryExperience />;
+  return <InventoryScreen />;
 }
