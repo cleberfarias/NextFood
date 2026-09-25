@@ -45,7 +45,7 @@ describe("InventoryExperience", () => {
     fireEvent.change(screen.getByLabelText("Buscar item"), { target: { value: "inexistente" } });
     expect(screen.getByText("Nenhum item encontrado com esses filtros.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Limpar filtros" }));
-    expect(within(screen.getByRole("list", { name: "Itens do estoque" })).getAllByRole("listitem")).toHaveLength(12);
+    expect(within(screen.getByRole("list", { name: "Itens do estoque" })).getAllByRole("listitem")).toHaveLength(13);
   });
 
   it("registers an entrada, updates the balance and clears the alert for that item", () => {

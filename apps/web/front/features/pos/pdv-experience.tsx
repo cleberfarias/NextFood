@@ -7,10 +7,16 @@ import { Button } from "@/front/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/front/ui/card";
 import { usePrefersReducedMotion } from "@/front/lib/use-prefers-reduced-motion";
 import { calculateDiscountedTotal, calculateLineTotal, calculateRemainingAmount, isPaymentComplete } from "./pos-calculations";
-import { AÇAI_COMPLEMENTS, AÇAI_PRICE_PER_KG, MOCK_SCALE, type CartItem, type PaymentMethod, UNIT_PRODUCTS } from "./pos-mocks";
+import { unitProducts, weighedProduct } from "@/back/domain/catalog/catalog";
+import { CATALOG } from "@/front/features/catalog/catalog-mocks";
+import { MOCK_SCALE, type CartItem, type PaymentMethod } from "./pos-mocks";
 import { CartLine, OperationFeedback, PaymentMethodSelector, PosDialog, ProductCard, QuantityControl, ScaleIndicator } from "./pos-ui";
 
 const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const UNIT_PRODUCTS = unitProducts(CATALOG);
+const AÇAI_PRICE_PER_KG = weighedProduct(CATALOG).pricePerKg;
+// Until the till adopts ready cups, a complement is still charged per portion at its extra price.
+const AÇAI_COMPLEMENTS = CATALOG.complements.map((complement) => ({ id: complement.id, name: complement.name, price: complement.extraPrice }));
 const AÇAÍ_COMPLEMENTS = AÇAI_COMPLEMENTS;
 const paymentMethods: readonly PaymentMethod[] = ["Dinheiro", "Débito", "Crédito", "Pix"];
 type Permission = "cancel" | "discount" | "closeCash";

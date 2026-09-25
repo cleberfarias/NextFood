@@ -15,7 +15,8 @@ import {
   type MovementInput,
 } from "@/back/domain/inventory/inventory";
 import { BrandMark } from "@/front/features/home/brand-mark";
-import { INVENTORY_ITEMS, MOVEMENT_AUTHOR } from "./inventory-mocks";
+import { CATALOG } from "@/front/features/catalog/catalog-mocks";
+import { MOVEMENT_AUTHOR } from "./inventory-mocks";
 import { focusRing, InventoryList, LowStockBanner, RecentMovements } from "./inventory-ui";
 import { MovementPanel } from "./movement-panel";
 
@@ -37,7 +38,7 @@ const CATEGORY_FILTERS: readonly { value: CategoryFilter; label: string }[] = [
   { value: "produto", label: "Produtos" },
 ];
 
-export function InventoryExperience({ initialItems = INVENTORY_ITEMS }: { initialItems?: readonly InventoryItem[] }) {
+export function InventoryExperience({ initialItems = CATALOG.stockItems }: { initialItems?: readonly InventoryItem[] }) {
   const [state, dispatch] = useReducer(reducer, { items: [...initialItems], movements: [] });
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<CategoryFilter>("todos");
