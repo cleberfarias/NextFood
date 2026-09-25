@@ -79,6 +79,14 @@ describe("InventoryExperience", () => {
     expect(within(dialog).getByText("O saldo vai de 1,2 kg para 11,2 kg.")).toBeInTheDocument();
   });
 
+  it("reads a thousands dot as thousands for items counted in units", () => {
+    render(<InventoryExperience />);
+    fireEvent.click(screen.getByRole("button", { name: "Movimentar Colheres" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText(/quantidade recebida/i), { target: { value: "1.000" } });
+    expect(within(dialog).getByText("O saldo vai de 500 un para 1.500 un.")).toBeInTheDocument();
+  });
+
   it("changes the quantity label with the movement type", () => {
     render(<InventoryExperience />);
     fireEvent.click(screen.getByRole("button", { name: "Movimentar Polpa de açaí" }));

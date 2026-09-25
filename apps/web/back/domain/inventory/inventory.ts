@@ -64,10 +64,20 @@ export function formatQuantity(value: number, unit: InventoryUnit, options: { si
   return `${formatter.format(value)} ${unit}`;
 }
 
-/** Parses what a person types: "1,5", "1.5" or "−2" (typographic minus). Empty or garbage is NaN. */
-export function parseQuantity(raw: string): number {
+// "1.000" with no comma: pt-BR thousands, or an English-style decimal?
+const THOUSANDS_DOTS = /^[+-]?[1-9]\d{0,2}(\.\d{3})+$/;
+
+/**
+ * Parses what a person types: "1,5", "1.5" or "−2" (typographic minus). Empty or garbage is NaN.
+ * A lone "1.000" is thousands for whole-unit items; for kg/L it is ambiguous, so it is NaN
+ * rather than a silent 1 or 1000.
+ */
+export function parseQuantity(raw: string, unit?: InventoryUnit): number {
   const cleaned = raw.trim().replace(/[−–]/g, "-").replace(/\s+/g, "");
   if (cleaned === "") return Number.NaN;
+  if (!cleaned.includes(",") && THOUSANDS_DOTS.test(cleaned)) {
+    return unit === "un" ? Number(cleaned.replace(/\./g, "")) : Number.NaN;
+  }
   const normalized = cleaned.includes(",") ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned;
   return Number(normalized);
 }

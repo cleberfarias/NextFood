@@ -172,6 +172,15 @@ describe("parseQuantity", () => {
     expect(parseQuantity("-2,5")).toBe(-2.5);
   });
 
+  it("reads a pt-BR thousands dot as thousands for un, and as ambiguous (NaN) for kg/L", () => {
+    expect(parseQuantity("1.000", "un")).toBe(1000);
+    expect(parseQuantity("12.500", "un")).toBe(12500);
+    expect(parseQuantity("1.000", "kg")).toBeNaN();
+    expect(parseQuantity("2.500.000", "L")).toBeNaN();
+    expect(parseQuantity("0.500", "kg")).toBe(0.5);
+    expect(parseQuantity("1.25", "kg")).toBe(1.25);
+  });
+
   it("returns NaN for empty or non-numeric input", () => {
     expect(parseQuantity("")).toBeNaN();
     expect(parseQuantity("   ")).toBeNaN();

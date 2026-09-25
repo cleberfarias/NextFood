@@ -51,7 +51,7 @@ export function MovementPanel({
   const [error, setError] = useState<MovementError | null>(null);
 
   const item = items.find((entry) => entry.id === itemId);
-  const input: MovementInput = { type, quantity: parseQuantity(quantityRaw), reason };
+  const input: MovementInput = { type, quantity: parseQuantity(quantityRaw, item?.unit), reason };
   const preview = item && quantityRaw.trim() !== "" ? applyMovement(item, { ...input, reason: "prévia" }, PREVIEW_META) : null;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
