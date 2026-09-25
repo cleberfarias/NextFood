@@ -63,6 +63,17 @@ describe("catalog store", () => {
     expect(screen.getByText("preço 50")).toBeInTheDocument();
   });
 
+  it("re-reads the saved catalog when a screen mounts again after all readers left", () => {
+    // e.g. the till tab navigated to the home page while the Cardápio was edited in another tab
+    const first = render(<AcaiPrice />);
+    expect(screen.getByText("preço 39.9")).toBeInTheDocument();
+    first.unmount();
+
+    localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(withAcaiPrice(47)));
+    render(<AcaiPrice />);
+    expect(screen.getByText("preço 47")).toBeInTheDocument();
+  });
+
   it("gives each catalog object a stable key", () => {
     const sample = catalogKey(CATALOG);
     expect(catalogKey(CATALOG)).toBe(sample);

@@ -6,15 +6,18 @@ export const CATALOG_STORAGE_KEY = "nextfood:catalog:v1";
 
 const listeners = new Set<() => void>();
 let snapshot: Catalog | null = null;
+// The stored string the snapshot was built from, so a returning screen can tell whether it is stale.
+let snapshotRaw: string | null = null;
 
-/** The saved catalog, or the sample one when nothing valid is saved. Never overwrites what is stored. */
-export function loadCatalog(): Catalog {
-  let raw: string | null;
+function readRaw(): string | null {
   try {
-    raw = window.localStorage.getItem(CATALOG_STORAGE_KEY);
+    return window.localStorage.getItem(CATALOG_STORAGE_KEY);
   } catch {
-    return CATALOG;
+    return null;
   }
+}
+
+function parseRaw(raw: string | null): Catalog {
   if (raw === null) return CATALOG;
   try {
     const parsed = JSON.parse(raw) as Catalog;
@@ -25,9 +28,23 @@ export function loadCatalog(): Catalog {
   }
 }
 
+/** The saved catalog, or the sample one when nothing valid is saved. Never overwrites what is stored. */
+export function loadCatalog(): Catalog {
+  return parseRaw(readRaw());
+}
+
+/** Rebuilds the snapshot when storage changed since it was built; true when it did. */
+function refresh(): boolean {
+  const raw = readRaw();
+  if (snapshot !== null && raw === snapshotRaw) return false;
+  snapshotRaw = raw;
+  snapshot = parseRaw(raw);
+  return true;
+}
+
 function getSnapshot(): Catalog {
-  snapshot ??= loadCatalog();
-  return snapshot;
+  if (snapshot === null) refresh();
+  return snapshot ?? CATALOG;
 }
 
 // The server never sees localStorage: it and the first client render show the sample catalog.
@@ -35,17 +52,21 @@ function getServerSnapshot(): Catalog {
   return CATALOG;
 }
 
-function publish(next: Catalog) {
-  snapshot = next;
+function notify() {
   for (const listener of listeners) listener();
 }
 
 function onStorage(event: StorageEvent) {
-  if (event.key === CATALOG_STORAGE_KEY || event.key === null) publish(loadCatalog());
+  if ((event.key === CATALOG_STORAGE_KEY || event.key === null) && refresh()) notify();
 }
 
 function subscribe(listener: () => void) {
-  if (listeners.size === 0) window.addEventListener("storage", onStorage);
+  if (listeners.size === 0) {
+    window.addEventListener("storage", onStorage);
+    // Nobody listened for storage events while no screen was mounted (e.g. the till tab was on
+    // the home page); catch up with any change another tab saved meanwhile.
+    refresh();
+  }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -55,12 +76,16 @@ function subscribe(listener: () => void) {
 
 /** Only call with a catalog that already passed validation (an ok EditResult). */
 export function saveCatalog(next: Catalog) {
+  const raw = JSON.stringify(next);
   try {
-    window.localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(next));
+    window.localStorage.setItem(CATALOG_STORAGE_KEY, raw);
+    snapshotRaw = raw;
   } catch {
-    // Storage unavailable (private mode, blocked): keep the change in memory only.
+    // Storage unavailable (private mode, blocked, full): keep the change in memory only.
+    snapshotRaw = readRaw();
   }
-  publish(next);
+  snapshot = next;
+  notify();
 }
 
 export function resetCatalog() {
@@ -69,7 +94,9 @@ export function resetCatalog() {
   } catch {
     // Storage unavailable: there is nothing saved to remove.
   }
-  publish(CATALOG);
+  snapshotRaw = readRaw();
+  snapshot = CATALOG;
+  notify();
 }
 
 export function useCatalog(): Catalog {
