@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { unitProducts, validateCatalog, weighedProduct, type Catalog, type SaleProduct, type UnitProduct } from "./catalog";
+import { activeComplements, unitProducts, validateCatalog, weighedProduct, type Catalog, type SaleProduct, type UnitProduct } from "./catalog";
 
 function validCatalog(): Catalog {
   return {
@@ -9,12 +9,12 @@ function validCatalog(): Catalog {
       { id: "granola", name: "Granola", category: "insumo", unit: "kg", balance: 1, minimum: 1 },
     ],
     // Same id as the stock item on purpose: uniqueness is per list.
-    packagings: [{ id: "copo", name: "Copo", stockItemId: "copo", tareKg: 0.01 }],
-    complements: [{ id: "granola", name: "Granola", extraPrice: 2.5, stockItemId: "granola" }],
+    packagings: [{ id: "copo", name: "Copo", stockItemId: "copo", tareKg: 0.01, active: true }],
+    complements: [{ id: "granola", name: "Granola", extraPrice: 2.5, stockItemId: "granola", active: true }],
     products: [
-      { kind: "peso", id: "acai", name: "Açaí", pricePerKg: 40, packagingIds: ["copo"], consumesPerKg: [{ itemId: "polpa", quantity: 0.8 }] },
-      { kind: "pronto", id: "pronto", name: "Pronto", price: 15, packagingId: "copo", includedComplements: 3, consumes: [{ itemId: "polpa", quantity: 0.35 }] },
-      { kind: "unidade", id: "avulso", name: "Copo avulso", price: 10, consumes: [{ itemId: "copo", quantity: 1 }] },
+      { kind: "peso", id: "acai", name: "Açaí", active: true, pricePerKg: 40, packagingIds: ["copo"], consumesPerKg: [{ itemId: "polpa", quantity: 0.8 }] },
+      { kind: "pronto", id: "pronto", name: "Pronto", active: true, price: 15, packagingId: "copo", includedComplements: 3, consumes: [{ itemId: "polpa", quantity: 0.35 }] },
+      { kind: "unidade", id: "avulso", name: "Copo avulso", active: true, price: 10, consumes: [{ itemId: "copo", quantity: 1 }] },
     ],
   };
 }
@@ -112,12 +112,51 @@ describe("validateCatalog", () => {
       message: "Informe ao menos uma embalagem.",
     });
   });
+
+  it("rejects a blank name", () => {
+    const catalog = validCatalog();
+    expect(validateCatalog({ ...catalog, packagings: [{ ...catalog.packagings[0], name: "  " }] })).toContainEqual({
+      path: "packagings[copo]",
+      message: "Informe o nome.",
+    });
+    expect(validateCatalog(withProduct("avulso", { name: "" }))).toContainEqual({ path: "products[avulso]", message: "Informe o nome." });
+  });
+
+  it("rejects an active product using a disabled packaging, but not a disabled product", () => {
+    const catalog = validCatalog();
+    const disabledCopo = { ...catalog, packagings: [{ ...catalog.packagings[0], active: false }] };
+    const errors = validateCatalog(disabledCopo);
+    expect(errors).toContainEqual({ path: "products[pronto].packagingId", message: "A embalagem Copo está desativada." });
+    expect(errors).toContainEqual({ path: "products[acai].packagingIds", message: "A embalagem Copo está desativada." });
+
+    const inactivePronto = { ...disabledCopo, products: disabledCopo.products.map((product) => (product.id === "pronto" ? { ...product, active: false } : product)) };
+    expect(validateCatalog(inactivePronto)).not.toContainEqual(expect.objectContaining({ path: "products[pronto].packagingId" }));
+  });
+
+  it("requires exactly one active weighed product", () => {
+    const message = "O catálogo precisa de um açaí por peso ativo.";
+    const catalog = validCatalog();
+    expect(validateCatalog(withProduct("acai", { active: false }))).toContainEqual({ path: "products", message });
+    expect(validateCatalog({ ...catalog, products: catalog.products.filter((product) => product.kind !== "peso") })).toContainEqual({ path: "products", message });
+    const twoWeighed = { ...catalog, products: [...catalog.products, { ...catalog.products[0], id: "acai-2" } as SaleProduct] };
+    expect(validateCatalog(twoWeighed)).toContainEqual({ path: "products", message });
+  });
 });
 
 describe("catalog readers", () => {
+  it("unitProducts skips disabled products", () => {
+    expect(unitProducts(withProduct("avulso", { active: false }))).toEqual([]);
+  });
+
+  it("activeComplements keeps only active complements, in catalog order", () => {
+    const catalog = validCatalog();
+    const disabled = { id: "banana", name: "Banana", extraPrice: 2, stockItemId: "granola", active: false };
+    const mel = { id: "mel", name: "Mel", extraPrice: 1, stockItemId: "granola", active: true };
+    expect(activeComplements({ ...catalog, complements: [...catalog.complements, disabled, mel] }).map((entry) => entry.id)).toEqual(["granola", "mel"]);
+  });
   it("unitProducts keeps only unit products, in catalog order", () => {
     const catalog = validCatalog();
-    const second: UnitProduct = { kind: "unidade", id: "picole", name: "Picolé", price: 6.5, consumes: [] };
+    const second: UnitProduct = { kind: "unidade", id: "picole", name: "Picolé", active: true, price: 6.5, consumes: [] };
     const products = unitProducts({ ...catalog, products: [second, ...catalog.products] });
     expect(products.map((product) => product.id)).toEqual(["picole", "avulso"]);
   });

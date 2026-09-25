@@ -4,12 +4,12 @@ import type { InventoryItem } from "../inventory/inventory";
 export type StockUsage = { itemId: string; quantity: number };
 
 /** A cup or cone: consumes one unit of `stockItemId`; `tareKg` is its empty weight, taken off the scale. */
-export type Packaging = { id: string; name: string; stockItemId: string; tareKg: number };
+export type Packaging = { id: string; name: string; stockItemId: string; tareKg: number; active: boolean };
 
 /** No automatic stock usage (it goes inside the weight); stock is corrected by the physical count. */
-export type Complement = { id: string; name: string; extraPrice: number; stockItemId: string };
+export type Complement = { id: string; name: string; extraPrice: number; stockItemId: string; active: boolean };
 
-type ProductBase = { id: string; name: string };
+type ProductBase = { id: string; name: string; active: boolean };
 /** Built by the customer and weighed; `consumesPerKg` is per net kg sold. */
 export type WeighedProduct = ProductBase & { kind: "peso"; pricePerKg: number; packagingIds: string[]; consumesPerKg: StockUsage[] };
 /** Fixed price with `includedComplements`; `consumes` is per cup, on top of the packaging. */
@@ -54,8 +54,14 @@ export function validateCatalog(catalog: Catalog): CatalogError[] {
     }
   }
 
+  for (const [name, list] of lists) {
+    for (const entry of list) {
+      if (entry.name.trim() === "") report(`${name}[${entry.id}]`, "Informe o nome.");
+    }
+  }
+
   const stock = new Map(catalog.stockItems.map((item) => [item.id, item]));
-  const packagingIds = new Set(catalog.packagings.map((packaging) => packaging.id));
+  const packagings = new Map(catalog.packagings.map((packaging) => [packaging.id, packaging]));
 
   function stockItem(path: string, itemId: string): InventoryItem | undefined {
     const item = stock.get(itemId);
@@ -63,8 +69,10 @@ export function validateCatalog(catalog: Catalog): CatalogError[] {
     return item;
   }
 
-  function checkPackaging(path: string, id: string) {
-    if (!packagingIds.has(id)) report(path, `Embalagem não encontrada: ${id}.`);
+  function checkPackaging(path: string, id: string, productActive: boolean) {
+    const packaging = packagings.get(id);
+    if (!packaging) report(path, `Embalagem não encontrada: ${id}.`);
+    else if (productActive && !packaging.active) report(path, `A embalagem ${packaging.name} está desativada.`);
   }
 
   function checkUsages(basePath: string, usages: readonly StockUsage[], perKg: boolean) {
@@ -100,12 +108,12 @@ export function validateCatalog(catalog: Catalog): CatalogError[] {
       case "peso":
         if (!isPositive(product.pricePerKg)) report(path, PRICE_MESSAGE);
         if (product.packagingIds.length === 0) report(path, "Informe ao menos uma embalagem.");
-        for (const id of product.packagingIds) checkPackaging(`${path}.packagingIds`, id);
+        for (const id of product.packagingIds) checkPackaging(`${path}.packagingIds`, id, product.active);
         checkUsages(`${path}.consumesPerKg`, product.consumesPerKg, true);
         break;
       case "pronto":
         if (!isPositive(product.price)) report(path, PRICE_MESSAGE);
-        checkPackaging(`${path}.packagingId`, product.packagingId);
+        checkPackaging(`${path}.packagingId`, product.packagingId, product.active);
         if (!(Number.isInteger(product.includedComplements) && product.includedComplements >= 0)) {
           report(path, "Informe um número inteiro de complementos incluídos.");
         }
@@ -118,11 +126,18 @@ export function validateCatalog(catalog: Catalog): CatalogError[] {
     }
   }
 
+  const weighed = catalog.products.filter((product) => product.kind === "peso");
+  if (weighed.length !== 1 || !weighed[0].active) report("products", "O catálogo precisa de um açaí por peso ativo.");
+
   return errors;
 }
 
 export function unitProducts(catalog: Catalog): UnitProduct[] {
-  return catalog.products.filter((product): product is UnitProduct => product.kind === "unidade");
+  return catalog.products.filter((product): product is UnitProduct => product.kind === "unidade" && product.active);
+}
+
+export function activeComplements(catalog: Catalog): Complement[] {
+  return catalog.complements.filter((complement) => complement.active);
 }
 
 export function weighedProduct(catalog: Catalog): WeighedProduct {
