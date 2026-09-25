@@ -58,12 +58,12 @@ Funções puras que recebem o catálogo atual e devolvem `EditResult = { ok: tru
 - `resetCatalog()` — remove a chave e volta a `CATALOG`.
 - `useCatalog(): Catalog` — `useSyncExternalStore`, com snapshot do servidor = `CATALOG` (sem erro de hidratação: servidor e primeira renderização do cliente mostram os valores de exemplo; depois o cliente troca pelos guardados). O snapshot do cliente é o mesmo objeto enquanto nada muda.
 - Escuta o evento `storage` para refletir mudanças feitas em outra aba.
-- `useCatalogRevision(): number` — contador que sobe a cada troca de snapshot; usado pelo estoque como `key`.
+- `catalogKey(catalog): number` — número estável por objeto de catálogo (um `WeakMap`); muda quando o catálogo é trocado, inclusive na hidratação (quando o snapshot passa dos valores de exemplo para os guardados sem nenhuma gravação). Usado pelo estoque como `key`.
 
 ## Quem lê o store
 
 - **Caixa:** `pdv-experience.tsx` troca as constantes de módulo por `useCatalog()` dentro do componente: `unitProducts`, `weighedProduct(...).pricePerKg` e `activeComplements` (mapeados para `{ id, name, price: extraPrice }` como hoje). Itens já no carrinho mantêm o preço do momento em que entraram.
-- **Estoque:** a página `/estoque` renderiza `<InventoryExperience key={revisão} initialItems={catalog.stockItems} />`. Trocar o catálogo (hidratação ou edição em outra aba) remonta a tela; como isso só acontece antes de qualquer uso ou vindo de outra aba, a perda das movimentações em memória é aceitável nesta etapa.
+- **Estoque:** a página `/estoque` renderiza `<InventoryExperience key={catalogKey(catalog)} initialItems={catalog.stockItems} />`. Trocar o catálogo (hidratação ou edição em outra aba) remonta a tela; como isso só acontece antes de qualquer uso ou vindo de outra aba, a perda das movimentações em memória é aceitável nesta etapa.
 
 ## Tela
 
