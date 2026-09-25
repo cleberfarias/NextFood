@@ -133,6 +133,8 @@ body {
  * portals dialog content out to <body>, outside the PDV's DOM subtree.
  */
 .theme-light {
+  /* Native controls (checkbox, select, scrollbars) follow color-scheme, not the tokens below. */
+  color-scheme: light;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
