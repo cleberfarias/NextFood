@@ -28,13 +28,13 @@ export function LoginExperience() {
   }, []);
 
   if (webglState === "checking") {
-    return <div className="min-h-screen bg-zinc-950" />;
+    return <div className="min-h-screen bg-[radial-gradient(ellipse_at_50%_38%,#2a1a0f_0%,#150e09_45%,#050403_100%)]" />;
   }
 
   const use3D = webglState === "available" && !prefersReducedMotion;
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-zinc-950 px-6">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_at_50%_38%,#2a1a0f_0%,#150e09_45%,#050403_100%)] px-6">
       <LoginSequenceProvider skipChoreography={!use3D}>
         {use3D ? (
           <ThreeErrorBoundary fallback={null}>

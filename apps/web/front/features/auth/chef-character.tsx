@@ -8,6 +8,8 @@ import {
   ANIMATIONS,
   CHEF_MODEL_PATH,
   HAND_DESCENT_THRESHOLD_PX,
+  MAX_CARD_RISE_PX,
+  OFF_HAND_BONE,
   THROW_HAND_BONE,
   THROW_RELEASE_TIME,
 } from "./chef-animations";
@@ -30,6 +32,7 @@ export function ChefCharacter() {
   const stabilizedRef = useRef(false);
   const settledRef = useRef(false);
   const handBoneRef = useRef<Object3D | null>(null);
+  const offHandBoneRef = useRef<Object3D | null>(null);
   // Highest point (most negative screen Y) the hand bone has reached so
   // far, updated live every frame -- there's no reliable static "down"
   // pose to sample in advance (the model's bind pose before the mixer
@@ -38,6 +41,7 @@ export function ChefCharacter() {
   // playthrough instead of a pre-captured reference.
   const handPeakYRef = useRef<number | null>(null);
   const projected = useMemo(() => new Vector3(), []);
+  const offProjected = useMemo(() => new Vector3(), []);
 
   useEffect(() => {
     const throwAction = actions[ANIMATIONS.throwLogin];
@@ -48,6 +52,7 @@ export function ChefCharacter() {
     // THROW_HAND_BONE's own comment; verify against the loaded scene (not
     // just the GLB's JSON) if this ever needs to change again.
     handBoneRef.current = scene.getObjectByName(THROW_HAND_BONE) ?? null;
+    offHandBoneRef.current = scene.getObjectByName(OFF_HAND_BONE) ?? null;
 
     throwAction.reset();
     throwAction.setLoop(LoopOnce, 1);
@@ -68,17 +73,35 @@ export function ChefCharacter() {
 
     // One hand-position read per frame, reused below -- while "entering" to
     // drive the card, and through "entering"/"thrown" to track how high the
-    // hand actually gets (see handPeakYRef).
+    // hand actually gets (see handPeakYRef). Peak/descent tracking stays on
+    // this hand alone (it's the one that actually performs and ends the
+    // throw); the off hand only ever affects where the card sits below.
+    let handScreenX: number | null = null;
     let handScreenY: number | null = null;
     if (handBoneRef.current) {
       handBoneRef.current.getWorldPosition(projected);
       projected.project(camera);
+      handScreenX = projected.x * 0.5 * size.width;
       handScreenY = -projected.y * 0.5 * size.height;
     }
 
-    if (stage === "entering" && handScreenY !== null) {
-      handX.set(projected.x * 0.5 * size.width);
-      handY.set(handScreenY);
+    if (stage === "entering" && handScreenX !== null && handScreenY !== null) {
+      // Grip point the card follows: the midpoint between both hands when
+      // the off hand is available, so it reads as held between them instead
+      // of tracking only the hand that releases it (which sat visibly
+      // off-center, to one side of the chef).
+      let cardX = handScreenX;
+      let cardY = handScreenY;
+      if (offHandBoneRef.current) {
+        offHandBoneRef.current.getWorldPosition(offProjected);
+        offProjected.project(camera);
+        const offScreenX = offProjected.x * 0.5 * size.width;
+        const offScreenY = -offProjected.y * 0.5 * size.height;
+        cardX = (handScreenX + offScreenX) / 2;
+        cardY = (handScreenY + offScreenY) / 2;
+      }
+      handX.set(cardX);
+      handY.set(Math.max(cardY, -MAX_CARD_RISE_PX));
     }
 
     if ((stage === "entering" || stage === "thrown") && handScreenY !== null) {

@@ -44,6 +44,16 @@ export const THROW_RELEASE_TIME = 2.4;
  */
 export const HAND_DESCENT_THRESHOLD_PX = 180;
 
+/**
+ * How far above its resting position (screen pixels) the card is allowed to
+ * follow the hand while "entering". This clip raises both hands well above
+ * head height during the wind-up; letting the card track that literally put
+ * it up by the chef's face at a tiny scale, which read as broken rather than
+ * gripped. Clamping the rise keeps the card riding at roughly chest height
+ * the whole time, even while the hand itself goes higher.
+ */
+export const MAX_CARD_RISE_PX = 70;
+
 export const CHEF_MODEL_PATH = "/models/chef.glb";
 
 /**
@@ -56,3 +66,14 @@ export const CHEF_MODEL_PATH = "/models/chef.glb";
  * the Left variant if the throw turns out to use the other arm.
  */
 export const THROW_HAND_BONE = "mixamorigRightHand";
+
+/**
+ * The chef's other hand. The throw clip raises both arms, and the card
+ * should sit gripped between them, not off to one side tracking only the
+ * hand that actually releases it -- so ChefCharacter averages this bone's
+ * screen position with THROW_HAND_BONE's for where the card sits while
+ * "entering". Same Mixamo naming pattern as THROW_HAND_BONE (raw GLB node
+ * "mixamorig:LeftHand", ':' stripped by GLTFLoader); falls back to
+ * THROW_HAND_BONE alone if this bone isn't found on the loaded scene.
+ */
+export const OFF_HAND_BONE = "mixamorigLeftHand";

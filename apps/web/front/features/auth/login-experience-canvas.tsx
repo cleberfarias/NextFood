@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
-import { Bounds, Environment } from "@react-three/drei";
+import { Bounds, ContactShadows, Environment } from "@react-three/drei";
 import { ChefCharacter } from "./chef-character";
 
 /**
@@ -18,14 +18,15 @@ import { ChefCharacter } from "./chef-character";
 export default function LoginExperienceCanvas() {
   return (
     <Canvas camera={{ fov: 35 }} dpr={[1, 2]}>
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[3, 4, 2]} intensity={1.2} castShadow={false} />
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[3, 4, 2]} intensity={1} color="#ffddb0" castShadow={false} />
       <Suspense fallback={null}>
         <Bounds fit clip observe margin={1.4}>
           <ChefCharacter />
         </Bounds>
-        <Environment preset="city" />
+        <Environment preset="apartment" environmentIntensity={0.45} />
       </Suspense>
+      <ContactShadows position={[0, -0.08, 0]} opacity={0.9} scale={4} blur={1.8} far={1.5} resolution={512} color="#000000" />
     </Canvas>
   );
 }
